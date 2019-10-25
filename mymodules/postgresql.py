@@ -62,13 +62,3 @@ def select_all(sql, params, user, password, database, host='127.0.0.1', port='54
         if (connection):
             close_connection(connection)
             print("PostgreSQL connection is closed")
-
-# if __name__ == '__main__':
-#     write_db("""delete from test where id = %s""", (1),
-#              'wangnan', 'postgres', 'devops')
-#     write_db("""insert into test(id, name) values(%s, %s)""", (1, '张三'),
-#              'wangnan', 'postgres', 'devops')
-#     write_db("""update test set name = %s where id = %s""", ('张三1', 1),
-#              'wangnan', 'postgres', 'devops')
-#     select_all("""select * from test""", (),
-#                'wangnan', 'postgres', 'devops')

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# http://git.mamaqunaer.cc/api/v3/projects?private_token=LTDbr3zzJza_JwC8_Gjz
+
 import gitlab
 
 import os
@@ -62,11 +62,3 @@ class GitlabAPI(object):
         for branch in branches:
             result_list.append(branch.name)
         return result_list
-
-# if __name__ == '__main__':
-#     username = 'wangnan'
-#     git = GitlabAPI()
-#     userid = git.get_user_id(username)
-#     print(username + '->' + str(userid))
-#     userprojects = git.get_user_projects(userid)
-#     print(userprojects)
