@@ -19,7 +19,6 @@ socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 @app.cli.command("app_run")
 def app_run():
-    # app.run()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
 
 
@@ -49,6 +48,7 @@ def hello():
 def fetch_git_repos_2_db():
     project_list = GitlabAPI().get_all_projects()
     git_repos_objects = GitRepoSchema(many=True).load(project_list)
+
     session = Session()
     try:
         for git_repo in git_repos_objects:
@@ -69,6 +69,7 @@ def git_repos():
         result_list = GitRepoSchema(many=True).dump(git_repos_objects)
     finally:
         session.close()
+
     return jsonify(result_list)
 
 
@@ -84,8 +85,7 @@ def publishment_list():
     page_size = 10
     keyword = request.args.get('keyword')
     current_page = request.args.get('current_page')
-    print(keyword, '===========', current_page)
-    # TODO 分页、过滤
+
     session = Session()
     try:
         base_statement = session.query(Publishment).select_from(Publishment) \
@@ -102,7 +102,8 @@ def publishment_list():
                                                        GitRepo.web_url.like('%' + keyword + '%'),
                                                        GitRepo.path_with_namespace.like('%' + keyword + '%')
                                                        ))
-        publishment_git_repos_objects = base_statement.limit(page_size).offset((int(current_page) - 1) * page_size).all()
+        publishment_git_repos_objects = base_statement.limit(page_size).offset(
+            (int(current_page) - 1) * page_size).all()
         if len(publishment_git_repos_objects) != 0:
             publishment_git_repos_counts = base_statement.count()
         else:
@@ -112,6 +113,7 @@ def publishment_list():
 
     result_list = PublishmentSchema(many=True).dump(publishment_git_repos_objects)
     result = {'data': result_list, 'total': publishment_git_repos_counts}
+
     return jsonify(result)
 
 
@@ -194,18 +196,6 @@ def delete_publishment():
 def publish():
     id = get_parameter('id')
 
-    session = Session()
-    try:
-        result_object = session.query(Publishment).select_from(
-            Publishment).join(GitRepo,
-                              Publishment.git_repo_id == GitRepo.id).filter(Publishment.id == id).one_or_none()
-    finally:
-        session.close()
-
-    params_json = PublishmentSchema().dump(result_object)
-
-    threading.Thread(target=execute_cmd, kwargs=params_json).start()
-
     return json.dumps({'status': 'OK'})
 
 
@@ -227,22 +217,12 @@ def execute_cmd(**kwargs):
                                  git_delete_temp_branch=params_json.get('git_delete_temp_branch')),
                          stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, shell=True, bufsize=1)
-
-    # for info in p.communicate():
-    #     print(info, )
-
-    for line in iter(p.stdout.readline, b''):
-        print(line.decode(encoding="utf-8"), )
-        lock.acquire()
-        try:
-            list.append(line.decode(encoding="utf-8"))
-        finally:
-            lock.release()
-    p.stdout.close()
-
-
-list = []
-lock = threading.Lock()
+    try:
+        for line in iter(p.stdout.readline, b''):
+            print(line.decode(encoding="utf-8"), )
+            socketio.emit('publish_response', {'data': line.decode(encoding="utf-8")})
+    finally:
+        p.stdout.close()
 
 
 def get_parameter(key):
@@ -266,15 +246,28 @@ def default_error_handler(e):
     print('Socket error:', e)
 
 
-@socketio.on('my_event')
+def get_publishment_detail(id):
+    session = Session()
+    try:
+        result_object = session.query(Publishment).select_from(
+            Publishment).join(GitRepo,
+                              Publishment.git_repo_id == GitRepo.id).filter(Publishment.id == id).one_or_none()
+    finally:
+        session.close()
+
+    return PublishmentSchema().dump(result_object)
+
+
+@socketio.on('publish_event')
 def test_event(params):
-    print('my event', params)
-    while True:
-        lock.acquire()
-        try:
-            for line in list:
-                socketio.emit('my_response', {'data': line})
-                # socketio.sleep(1)
-            list.clear()
-        finally:
-            lock.release()
+    print('publish event', params)
+    lock.acquire()
+    print(f'=======每次只能一条线程进来执行发布，thread.name: {threading.current_thread().name}')
+    try:
+        params_json = get_publishment_detail(params['id'])
+        execute_cmd(**params_json)
+    finally:
+        lock.release()
+
+
+lock = threading.Lock()
