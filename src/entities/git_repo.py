@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 
 from .entity import Entity, Base
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Sequence
 from marshmallow import Schema, fields, post_load
 
 
 class GitRepo(Entity, Base):
     __tablename__ = 'git_repo'
 
-    id = Column(Integer, primary_key=True)
-    description = Column(String)
-    ssh_url_to_repo = Column(String)
-    http_url_to_repo = Column(String)
-    web_url = Column(String)
-    name = Column(String)
-    name_with_namespace = Column(String)
-    path = Column(String)
-    path_with_namespace = Column(String)
+    id = Column(Integer, Sequence('git_repo_id_seq'), primary_key=True)
+    description = Column(String(128))
+    ssh_url_to_repo = Column(String(128), nullable=False)
+    http_url_to_repo = Column(String(128), nullable=False)
+    web_url = Column(String(128), nullable=False)
+    name = Column(String(64), nullable=False)
+    name_with_namespace = Column(String(64), nullable=False)
+    path = Column(String(64), nullable=False)
+    path_with_namespace = Column(String(64), nullable=False)
 
     def __init__(self, description, ssh_url_to_repo, http_url_to_repo, web_url, name, name_with_namespace, path,
                  path_with_namespace, id = None, created_by=None):

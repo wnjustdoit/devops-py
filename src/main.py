@@ -4,14 +4,12 @@ from flask import Flask, escape, request, render_template, json, jsonify
 from flask_cors import CORS
 
 from .mymodules.pygitlab import GitlabAPI
-from .entities.entity import Session
+from .entities.entity import Session, or_
 from .entities.git_repo import GitRepo, GitRepoSchema
 from .entities.publishment import Publishment, PublishmentSchema
 import subprocess
-from flask_socketio import SocketIO, send, emit
-import click
+from flask_socketio import SocketIO
 import threading
-from pprint import pprint
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -81,19 +79,40 @@ def git_repo_branches(id):
 
 
 # 获取发布列表
-@app.route("/publishment/list")
+@app.route("/publishment/list", methods=['GET'])
 def publishment_list():
+    page_size = 10
+    keyword = request.args.get('keyword')
+    current_page = request.args.get('current_page')
+    print(keyword, '===========', current_page)
+    # TODO 分页、过滤
     session = Session()
     try:
-        publishment_git_repos_objects = session.query(Publishment).select_from(
-            Publishment).join(GitRepo,
-                              Publishment.git_repo_id == GitRepo.id).all()
+        base_statement = session.query(Publishment).select_from(Publishment) \
+            .join(GitRepo, Publishment.git_repo_id == GitRepo.id)
+        if keyword:
+            base_statement = base_statement.filter(or_(Publishment.name.like('%' + keyword + '%'),
+                                                       Publishment.description.like('%' + keyword + '%'),
+                                                       Publishment.to_project_home.like('%' + keyword + '%'),
+                                                       Publishment.to_process_name.like('%' + keyword + '%'),
+                                                       GitRepo.name.like('%' + keyword + '%'),
+                                                       GitRepo.description.like('%' + keyword + '%'),
+                                                       GitRepo.ssh_url_to_repo.like('%' + keyword + '%'),
+                                                       GitRepo.http_url_to_repo.like('%' + keyword + '%'),
+                                                       GitRepo.web_url.like('%' + keyword + '%'),
+                                                       GitRepo.path_with_namespace.like('%' + keyword + '%')
+                                                       ))
+        publishment_git_repos_objects = base_statement.limit(page_size).offset((int(current_page) - 1) * page_size).all()
+        if len(publishment_git_repos_objects) != 0:
+            publishment_git_repos_counts = base_statement.count()
+        else:
+            publishment_git_repos_counts = 0
     finally:
         session.close()
 
     result_list = PublishmentSchema(many=True).dump(publishment_git_repos_objects)
-
-    return jsonify(result_list)
+    result = {'data': result_list, 'total': publishment_git_repos_counts}
+    return jsonify(result)
 
 
 # 获取发布详情
@@ -192,7 +211,7 @@ def publish():
 
 def execute_cmd(**kwargs):
     params_json = kwargs
-    p = subprocess.Popen("""python3 mymodules/devops.py \
+    p = subprocess.Popen("""python3 src/mymodules/devops.py \
             --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} --to_username={to_username} --to_ip={to_ip} --to_project_home={to_project_home} \
             --to_process_name={to_process_name} --to_java_opts="{to_java_opts}" --git_merged_branch={git_merged_branch} --git_tag_version={git_tag_version} --git_tag_comment={git_tag_comment} --git_delete_temp_branch={git_delete_temp_branch}"""
                          .format(git_repo=params_json.get('git_repo').get('ssh_url_to_repo'),
@@ -227,7 +246,9 @@ lock = threading.Lock()
 
 
 def get_parameter(key):
-    return request.get_json().get(key)
+    if request.get_json():
+        return request.get_json().get(key)
+    return None
 
 
 @socketio.on('connect')

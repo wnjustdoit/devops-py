@@ -2,28 +2,29 @@
 
 from .entity import Entity, Base
 from .git_repo import GitRepoSchema
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, Sequence
 from sqlalchemy.orm import relationship
 from marshmallow import Schema, fields
 
 
 class Publishment(Base, Entity):
     __tablename__ = 'publishment'
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
-    description = Column(String)
-    git_repo_id = Column(Integer, ForeignKey('git_repo.id'))
+
+    id = Column(Integer, Sequence('publishment_id_seq'), primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    git_repo_id = Column(Integer, ForeignKey('git_repo.id'), nullable=False)
+    git_branches = Column(String(32), nullable=False)
+    profile = Column(String(8), nullable=False)
+    to_username = Column(String(16), nullable=False)
+    to_ip = Column(String(64), nullable=False)
+    to_project_home = Column(String(64), nullable=False)
+    to_process_name = Column(String(32), nullable=False)
+    to_java_opts = Column(String(128))
+    git_merged_branch = Column(String(16))
+    git_tag_version = Column(String(16))
+    git_tag_comment = Column(String(128))
     git_delete_temp_branch = Column(Integer)
-    git_branches = Column(String)
-    profile = Column(String)
-    to_username = Column(String)
-    to_ip = Column(String)
-    to_project_home = Column(String)
-    to_process_name = Column(String)
-    to_java_opts = Column(String)
-    git_merged_branch = Column(String)
-    git_tag_version = Column(String)
-    git_tag_comment = Column(String)
     git_repo = relationship("GitRepo", uselist=False, primaryjoin='Publishment.git_repo_id == GitRepo.id', lazy=False)
 
     def __init__(self, git_repo_id, git_branches, profile, to_username, to_ip, to_project_home, to_process_name,

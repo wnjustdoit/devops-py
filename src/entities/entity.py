@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Integer, DateTime
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, or_, and_, tuple_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -15,11 +15,13 @@ Base = declarative_base()
 
 
 class Entity:
-    id = Column(Integer, primary_key=True)
+    # 或需要指定Sequence
+    # id = Column(Integer, primary_key=True)
 
-    # created_at = Column(DateTime)
+    # created_at = Column(DateTime, nullable=False)
     # updated_at = Column(DateTime)
-    # last_updated_by = Column(String)
+    # created_by = Column(DateTime, nullable=False)
+    # last_updated_by = Column(String(32))
 
     def __init__(self, created_by):
         self.created_at = datetime.now()
