@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.append(os.path.realpath('.'))
-from src.entities.entity import Base
+from src.entities import entity, git_repo, publishment, publishment_staticfile, publishment_fe_vue, publishment_nodejs
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -24,7 +24,7 @@ fileConfig(config.config_file_name)
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 # target_metadata = None
-target_metadata = Base.metadata
+target_metadata = entity.Base.metadata
 
 
 # other values from the config, defined by the needs of env.py,

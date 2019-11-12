@@ -10,6 +10,7 @@ from .entities.publishment import Publishment, PublishmentSchema
 import subprocess
 from flask_socketio import SocketIO
 import threading
+from datetime import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -52,6 +53,10 @@ def fetch_git_repos_2_db():
     session = Session()
     try:
         for git_repo in git_repos_objects:
+            git_repo.created_at = datetime.now()
+            git_repo.created_by = 'system-auto'
+            git_repo.last_updated_at = git_repo.created_at
+            git_repo.last_updated_by = git_repo.created_by
             session.merge(git_repo)
         session.commit()
     finally:
@@ -65,12 +70,29 @@ def fetch_git_repos_2_db():
 def git_repos():
     session = Session()
     try:
-        git_repos_objects = session.query(GitRepo).order_by(GitRepo.id).all()
+        git_repos_objects = session.query(GitRepo).filter(GitRepo.is_deleted == 0).order_by(GitRepo.id).all()
         result_list = GitRepoSchema(many=True).dump(git_repos_objects)
     finally:
         session.close()
 
     return jsonify(result_list)
+
+
+# 删除git仓库（逻辑删除）
+@app.route("/git/repos", methods=['DELETE'])
+def delete_git_repos():
+    id = get_parameter('id')
+
+    params_dict = {'is_deleted': 1}
+
+    session = Session()
+    try:
+        session.query(GitRepo).filter(GitRepo.id == id).update(params_dict)
+        session.commit()
+    finally:
+        session.close()
+
+    return jsonify({'status': 'OK'})
 
 
 # 调用gitlab API实时获取指定git仓库分支列表
@@ -202,24 +224,24 @@ def publish():
 def execute_cmd(**kwargs):
     params_json = kwargs
     p = subprocess.Popen("""python3 src/mymodules/devops.py \
-            --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} --to_username={to_username} --to_ip={to_ip} --to_project_home={to_project_home} \
+            --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} --to_ip={to_ip} --to_project_home={to_project_home} \
             --to_process_name={to_process_name} --to_java_opts="{to_java_opts}" --git_merged_branch={git_merged_branch} --git_tag_version={git_tag_version} --git_tag_comment={git_tag_comment} --git_delete_temp_branch={git_delete_temp_branch}"""
                          .format(git_repo=params_json.get('git_repo').get('ssh_url_to_repo'),
                                  git_branches=params_json.get('git_branches'),
                                  project_name=params_json.get('git_repo').get('name'),
-                                 profile=params_json.get('profile'), to_username=params_json.get('to_username'),
+                                 profile=params_json.get('profile'),
                                  to_ip=params_json.get('to_ip'), to_project_home=params_json.get('to_project_home'),
-                                 to_process_name=params_json.get('to_process_name'),
-                                 to_java_opts=params_json.get('to_java_opts'),
-                                 git_merged_branch=params_json.get('git_merged_branch'),
-                                 git_tag_version=params_json.get('git_tag_version'),
-                                 git_tag_comment=params_json.get('git_tag_comment'),
-                                 git_delete_temp_branch=params_json.get('git_delete_temp_branch')),
+                                 to_process_name=params_json.get('to_process_name') if params_json.get('to_process_name') is not None else '',
+                                 to_java_opts=params_json.get('to_java_opts') if params_json.get('to_java_opts') is not None else '',
+                                 git_merged_branch=params_json.get('git_merged_branch') if params_json.get('git_merged_branch') is not None else '',
+                                 git_tag_version=params_json.get('git_tag_version') if params_json.get('git_tag_version') is not None else '',
+                                 git_tag_comment=params_json.get('git_tag_comment') if params_json.get('git_tag_comment') is not None else '',
+                                 git_delete_temp_branch=int(params_json.get('git_delete_temp_branch'))),
                          stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, shell=True, bufsize=1)
     try:
         for line in iter(p.stdout.readline, b''):
-            print(line.decode(encoding="utf-8"), )
+            # print(line.decode(encoding="utf-8"), )
             socketio.emit('publish_response', {'data': line.decode(encoding="utf-8")})
     finally:
         p.stdout.close()

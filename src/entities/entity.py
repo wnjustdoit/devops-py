@@ -1,29 +1,44 @@
 #!/usr/bin/env python3
+
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, or_, and_, tuple_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from marshmallow import Schema, fields, post_load
 
 db_url = 'localhost:5432'
 db_name = 'devops'
 db_user = 'wangnan'
 db_password = 'postgres'
+
 engine = create_engine(f'postgresql+psycopg2://{db_user}:{db_password}@{db_url}/{db_name}', echo=True)
 Session = sessionmaker(bind=engine)
 
 Base = declarative_base()
 
 
+# 自动生成数据库表时，需要手动调整列名顺序
 class Entity:
     # 或需要指定Sequence
-    # id = Column(Integer, primary_key=True)
+    # id = Column(Integer, primary_key=True, comment='主键ID')
 
-    # created_at = Column(DateTime, nullable=False)
-    # updated_at = Column(DateTime)
-    # created_by = Column(DateTime, nullable=False)
-    # last_updated_by = Column(String(32))
+    created_at = Column(DateTime, nullable=False, comment='创建时间')
+    created_by = Column(String(32), nullable=False, comment='创建人')
+    last_updated_at = Column(DateTime, nullable=False, comment='最后更新时间')
+    last_updated_by = Column(String(32), nullable=False, comment='最后更新人')
+    is_deleted = Column(Integer, nullable=False, default=0, comment='是否删除：0表示正常，1表示已删除')
 
-    def __init__(self, created_by):
+    def __init__(self, created_by='system-auto'):
         self.created_at = datetime.now()
-        self.updated_at = datetime.now()
-        self.last_updated_by = created_by
+        self.created_by = created_by
+        self.last_updated_at = self.created_at
+        self.last_updated_by = self.created_by
+        self.is_deleted = 0
+
+    def init(self):
+        self.__init__()
+
+
+class EntitySchema(Schema):
+    created_at = last_updated_at = fields.DateTime()
+    created_by = last_updated_by = fields.Str()

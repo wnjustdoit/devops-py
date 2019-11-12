@@ -16,9 +16,10 @@ def ssh_cmd(ip, passwd, cmd, username='root'):
     try:
         ssh.connect(ip, 22, username, passwd, timeout=5)
         for m in cmd:
-            stdin, stdout, stderr = ssh.exec_command(m)
-            stdin.close()
-            for line in iter(stdout.readline, ""):
+            stdin, stdout, stderr = ssh.exec_command(m, bufsize=1)
+            # stdin.close()
+            for line in iter(stdout.readline, ''):
+                # print('line', line.strip())
                 output(line, end="")
         # output('%s\tOK\n' % ip)
         return 'OK'
@@ -35,7 +36,7 @@ def scp_cmd(ip, passwd, local_path, remote_path, username='root'):
     try:
         ssh.connect(ip, 22, username, passwd, timeout=5)
         scp = SCPClient(ssh.get_transport(), socket_timeout=15)
-        scp.put(local_path, remote_path)
+        scp.put(local_path, remote_path, recursive=True)
         # output('%s\tOK\n' % ip)
         return 'OK'
     except Exception as e:

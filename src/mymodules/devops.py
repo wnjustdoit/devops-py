@@ -1,26 +1,66 @@
 #!/usr/bin/env python3
+# usage: python3 [script].py  [--git_repo=] [--git_branches=] [--project_name=] [--profile=] [--to_ip=] [--to_project_home=] [--to_process_name=] [--to_java_opts=] [--git_merged_branch=] [--git_tag_version=] [--git_tag_comment=] [--git_delete_temp_branch=]
+# eg: python3 devops.py --git_repo=git@192.168.1.248:mall/config-server.git --git_branches=develop --project_name=config-server --profile=dev --to_ip=192.168.1.248 --to_project_home=/home/project/mama_config_server --to_process_name=config-server --to_java_opts="-Xms768m -Xmx768m" --git_merged_branch= --git_tag_version= --git_tag_comment= --git_delete_temp_branch=0
+# 约定1：远程执行脚本路径：/home/devops/restart_jar.sh
+# 约定2：打包完毕上传至远程服务器[path_to_project_home]/web/目录下
+# 其他：你可能需要更改一下发布系统的工作目录；如果作为Python脚本脱离web容器独立运行的话，注意服务器登录信息配置文件的路径
+# TODO: 可配置打包完毕后所需使用的jar文件所在位置（指定模块文件夹名dirname）
+
 import os
 import sys
 import time
 import subprocess
 import getopt
+import configparser
 
-sys.path.append(os.path.realpath('.'))
-from src.mymodules.sshcmd import scp_cmd, ssh_cmd
+try:
+    from sshcmd import scp_cmd, ssh_cmd
+except Exception as e:
+    print('WARN:', 'import error, try another path..')
+    sys.path.append(os.path.realpath('.'))
+    from src.mymodules.sshcmd import scp_cmd, ssh_cmd
+
+# global variables
+work_home = "~/workspace/github/devops-py/devopstemp/"
+server_passport_config_location = 'src/configs/server_passport.properties'
 
 
-def output_all(resp, info_msg=None, error_msg='发布失败，请稍后重试'):
-    () if (info_msg is None) else print(info_msg)
+def output_all(msg, resp=0, exit=False):
+    print(msg if resp != 0 else f'{msg}, status_code: {resp}')
+    if exit:
+        sys.exit()
+    else:
+        sys.stdout.flush()
+
+
+def output_strict(msg, resp):
     if resp != 0:
-        print(error_msg)
-        exit(1)
-    sys.stdout.flush()
+        output_error(msg, resp)
+    else:
+        output_std(msg)
 
 
-def publish(git_repo, git_branches, project_name, profile, to_username, to_ip, to_project_home, to_process_name,
-            to_java_opts,
-            git_merged_branch, git_tag_version, git_tag_comment, git_delete_temp_branch,
-            work_home="~/workspace/github/devops-py/devopstemp/"):
+def output_relaxed(msg, resp):
+    if resp != 0:
+        output_warn(msg, resp)
+    else:
+        output_std(msg)
+
+
+def output_error(msg, resp=-1, exit=True):
+    output_all(f'ERROR: {msg}', resp, exit)
+
+
+def output_warn(msg, resp=-1):
+    output_all(f'WARN: {msg}', resp)
+
+
+def output_std(msg):
+    output_all(f'INFO: {msg}')
+
+
+def publish(git_repo, git_branches, project_name, profile, to_ip, to_project_home, to_process_name,
+            to_java_opts, git_merged_branch, git_tag_version, git_tag_comment, git_delete_temp_branch):
     # declare extra parameters
     is_standalone_branch = True
     git_branches_array = git_branches.split(',')
@@ -29,107 +69,110 @@ def publish(git_repo, git_branches, project_name, profile, to_username, to_ip, t
     if not git_repo or len(git_branches_array) == 0 \
             or not project_name \
             or not profile \
-            or not to_username \
             or not to_ip \
             or not to_project_home \
             or not to_process_name:
-        print('ERROR: required parameters cannot be empty')
-        sys.exit()
+        output_error('required parameters cannot be empty')
 
     if len(git_branches_array) > 1:
         is_standalone_branch = False
         filter(None, git_branches_array)
         if len(git_branches_array) == 0:
-            print('parameter [git_branches] invalid')
-            sys.exit()
+            output_error('parameter [git_branches] invalid')
         place_holder_branch = git_branches_array[0]
     else:
         place_holder_branch = git_branches_array[0]
 
+    # read config.properties
+    config = configparser.ConfigParser()
+    config.read(server_passport_config_location)
+    to_username = config.get(to_ip, 'username')
+    to_password = config.get(to_ip, 'password')
+
+    # local project home
     from_project_home = work_home + project_name
-    req = 0
 
-    output_all(req, '>>> 清除历史项目痕迹，开始新的工作')
+    output_std('>>> 清除历史项目痕迹，开始新的工作')
     resp = os.system(f'cd {work_home} && rm -rf {project_name}')
-    output_all(resp, '<<< 清除历史项目痕迹，开始新的工作')
+    output_strict('<<< 清除历史项目痕迹，开始新的工作', resp)
 
-    output_all(req, '>>> 克隆项目到发布系统本地')
+    output_std('>>> 克隆项目到发布系统本地')
     resp = os.system(f'cd {work_home} && git clone -b {place_holder_branch} {git_repo}')
-    output_all(resp, '<<< 克隆项目到发布系统本地')
+    output_strict('<<< 克隆项目到发布系统本地', resp)
 
     generated_timestamped_branch = ''
     if not is_standalone_branch:
+        # temporary branch generated strategy(when multiple branches)
         generated_timestamped_branch = "temp-" + time.strftime("%Y%m%d%H%M%S", time.localtime())
-        output_all(req, f'>>> 创建临时分支{generated_timestamped_branch}，并切到新分支上')
+        output_std(f'>>> 创建临时分支{generated_timestamped_branch}，并切到新分支上')
         resp = os.system(f'cd {from_project_home} && git checkout -b {generated_timestamped_branch}')
-        output_all(resp, f'<<< 创建临时分支{generated_timestamped_branch}，并切到新分支上')
+        output_strict(f'<<< 创建临时分支{generated_timestamped_branch}，并切到新分支上', resp)
         for each_branch in git_branches_array:
-            output_all(req, f'>>> 在新分支上合并分支{each_branch}')
+            output_std(f'>>> 在新分支上合并分支{each_branch}')
             resp = os.system(f'cd {from_project_home} && git merge {each_branch}')
-            output_all(resp, f'<<< 在新分支上合并分支{each_branch}')
+            output_strict(f'<<< 在新分支上合并分支{each_branch}', resp)
 
-    output_all(resp, f'>>> maven打包结束，打包环境：{profile}')
+    output_std(f'>>> maven开始打包，打包环境：{profile}')
     resp = os.system(f'cd {from_project_home} && mvn clean package -Dmaven.test.skip=true -P {profile} -U')
-    output_all(resp, f'<<< maven打包结束，打包环境：{profile}')
+    output_strict(f'<<< maven打包结束，打包环境：{profile}', resp)
 
     (status, filepath) = subprocess.getstatusoutput(f'ls {from_project_home}/target/*.*ar')
-    output_all(0, f'>>> SCP远程上传文件开始...')
-    scp_result = scp_cmd(to_ip, 'zhimore123', filepath, f'{to_project_home}/web/', f'{to_username}')
-    output_all(0, f'<<< SCP上传文件结束，状态：{scp_result}')
+    output_std(f'>>> SCP远程上传文件开始...')
+    scp_result = scp_cmd(to_ip, to_password, filepath, f'{to_project_home}/web/', to_username)
+    output_std(f'<<< SCP上传文件结束，状态：{scp_result}')
 
-    output_all(0, f'>>> 远程执行命令开始...')
-    ssh_cmd_result = ssh_cmd(to_ip, 'zhimore123',
+    output_std(f'>>> 远程执行命令开始...')
+    ssh_cmd_result = ssh_cmd(to_ip, to_password,
                              [f'sh /home/devops/restart_jar.sh {to_project_home} {to_process_name} "{to_java_opts}"'],
                              to_username)
-    output_all(0, f'<<< 远程执行命令结束，状态：{ssh_cmd_result}')
+    output_std(f'<<< 远程执行命令结束，状态：{ssh_cmd_result}')
 
     if git_merged_branch is not None and git_merged_branch != '':
+        output_std(f'>>> 切换到待合并到的分支: {git_merged_branch}')
         os.system(f'cd {from_project_home} && git checkout {git_merged_branch}')
-        output_all(req, f'>>> 合并到分支{git_merged_branch}')
+        output_relaxed(f'>>> 切换到待合并到的分支: {git_merged_branch}', resp)
         if not is_standalone_branch:
             resp = os.system(f'cd {from_project_home} && git merge {generated_timestamped_branch}')
         else:
             resp = os.system(f'cd {from_project_home} && git merge {git_branches_array[0]}')
-        output_all(resp, f'<<< 合并到分支{git_merged_branch}')
+        output_relaxed(f'<<< 合并到分支: {git_merged_branch}', resp)
 
     if git_tag_version is not None and git_tag_version != '' and git_tag_comment is not None and git_tag_comment != '':
-        output_all(req, f'>>> 打标签名：{git_tag_version}，注释：{git_tag_comment}')
+        output_std(f'>>> 打标签名：{git_tag_version}，注释：{git_tag_comment}')
         resp = os.system(f'git tag -a {git_tag_version} -m {git_tag_comment}')
-        output_all(resp, f'<<< 打标签名：{git_tag_version}，注释：{git_tag_comment}')
+        output_relaxed(f'<<< 打标签名：{git_tag_version}，注释：{git_tag_comment}', resp)
 
-    if git_delete_temp_branch is not None and git_delete_temp_branch != '' and generated_timestamped_branch is not None and generated_timestamped_branch != '':
-        output_all(req, f'>>> 删除远程临时分支：{generated_timestamped_branch}')
+    if git_delete_temp_branch is not None and git_delete_temp_branch != '' \
+            and generated_timestamped_branch is not None and generated_timestamped_branch != '':
+        output_std(f'>>> 删除远程临时分支：{generated_timestamped_branch}')
         resp = os.system(f'git push origin --delete {generated_timestamped_branch}')
-        output_all(resp, f'<<< 删除远程临时分支：{generated_timestamped_branch}')
+        output_relaxed(f'<<< 删除远程临时分支：{generated_timestamped_branch}', resp)
 
-    output_all(0, '<<<<<<<<<< 发布流程执行结束!! >>>>>>>>>>')
+    output_std('<<<<<<<<<< 发布流程执行结束!! >>>>>>>>>>')
 
     return 'PUBLISH OVER'
 
 
 if __name__ == '__main__':
     # define variables
-    git_repo, git_branches, project_name, profile, to_username, to_ip, to_project_home, to_process_name, \
-    to_java_opts, git_merged_branch, git_tag_version, git_tag_comment, git_delete_temp_branch \
-        = None, None, None, None, None, None, None, None, None, None, None, None, None
+    git_repo = git_branches = project_name = profile = to_ip = to_project_home = to_process_name = \
+        to_java_opts = git_merged_branch = git_tag_version = git_tag_comment = git_delete_temp_branch = None
 
     # receive parameters
+    opts = None
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hgr:gb:pn:pf:tu:ti:tph:tpn:tj:gmb:gtv:gtc:gdtb",
+        opts, args = getopt.getopt(sys.argv[1:], "hgr:gb:pn:pf:ti:tph:tpn:tj:gmb:gtv:gtc:gdtb",
                                    ["help", "git_repo=", "git_branches=", "project_name=", "profile=",
-                                    "to_username=",
                                     "to_ip=", "to_project_home=", "to_process_name=", "to_java_opts=",
                                     "git_merged_branch=", "git_tag_version=", "git_tag_comment=",
                                     "git_delete_temp_branch="])
-    except getopt.GetoptError:
-        print("getopt error")
-        sys.exit(2)
+    except getopt.GetoptError as e:
+        output_error(f'getopt error: {e.msg}')
 
     # extract parameters
     for opt, arg in opts:
         if opt == '-h':
-            print('Usage to see the source file')
-            exit()
+            output_std('Usage to see the source file')
         elif opt in ("--git_repo", "-gr"):
             git_repo = arg
         elif opt in ("--git_branches", "-gb"):
@@ -138,8 +181,6 @@ if __name__ == '__main__':
             project_name = arg
         elif opt in ("--profile", "-pf"):
             profile = arg
-        elif opt in ("--to_username", "-tu"):
-            to_username = arg
         elif opt in ("--to_ip", "-ti"):
             to_ip = arg
         elif opt in ("--to_project_home", "-tph"):
@@ -158,5 +199,5 @@ if __name__ == '__main__':
             git_delete_temp_branch = arg
 
     # invoke publish function
-    publish(git_repo, git_branches, project_name, profile, to_username, to_ip, to_project_home, to_process_name,
+    publish(git_repo, git_branches, project_name, profile, to_ip, to_project_home, to_process_name,
             to_java_opts, git_merged_branch, git_tag_version, git_tag_comment, git_delete_temp_branch)

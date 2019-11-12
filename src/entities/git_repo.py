@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from .entity import Entity, Base
+from .entity import Entity, EntitySchema, Base
 from sqlalchemy import Column, Integer, String, Sequence
 from marshmallow import Schema, fields, post_load
 
@@ -19,7 +19,7 @@ class GitRepo(Entity, Base):
     path_with_namespace = Column(String(64), nullable=False)
 
     def __init__(self, description, ssh_url_to_repo, http_url_to_repo, web_url, name, name_with_namespace, path,
-                 path_with_namespace, id = None, created_by=None):
+                 path_with_namespace, id=None, created_by=None):
         Entity.__init__(self, created_by)
         self.id = id
         self.description = description
@@ -37,9 +37,10 @@ class GitRepo(Entity, Base):
     #     return "<GitRepo(id={self.id})>".format(self=self)
 
 
-class GitRepoSchema(Schema):
+class GitRepoSchema(EntitySchema):
     id = fields.Number()
-    description = ssh_url_to_repo = http_url_to_repo = web_url = name = name_with_namespace = path = path_with_namespace = fields.Str()
+    description = ssh_url_to_repo = http_url_to_repo = web_url = name = name_with_namespace = path = path_with_namespace = fields.Str(
+        missing=None)
 
     @post_load
     def make_git_repo(self, data, **kwargs):
