@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
 
-from flask import Flask, escape, request, render_template, json, jsonify
+from flask import Flask, escape, request, make_response, session, render_template, json, jsonify, current_app
 from flask_cors import CORS
+from flask_socketio import SocketIO
+
+import os
+import subprocess
+import threading
+from datetime import datetime, timedelta
+import uuid
 
 from .mymodules.pygitlab import GitlabAPI
 from .entities.entity import Session, or_
 from .entities.git_repo import GitRepo, GitRepoSchema
 from .entities.publishment import Publishment, PublishmentSchema
-import subprocess
-from flask_socketio import SocketIO
-import threading
-from datetime import datetime
+from .configs.profiles import CURRENT_CONFIG_OBJECT
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
+app.config.from_object(CURRENT_CONFIG_OBJECT)
+app.config['SECRET_KEY'] = os.urandom(24)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
 cors = CORS(app)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 
 @app.cli.command("app_run")
 def app_run():
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host=current_app.config['HOST'], port=current_app.config['PORT'],
+                 debug=current_app.config['DEBUG'])
 
 
 if __name__ == '__main__':
@@ -42,6 +49,51 @@ def hello():
     # pprint('-=-', git_repo)
     name = request.args.get("name", "World")
     return f'Hello, {escape(name)}!'
+
+
+# login
+@app.route("/user/login", methods=["POST"])
+def login():
+    # TODO
+    session['user'] = 'mark'
+    return jsonify({'status': 'OK'})
+
+
+# get user info
+@app.route("/user/info", methods=["GET"])
+def user_info():
+    # TODO 含用户角色，区分前端、后端等身份，做权限
+    print('==user/info==', request.headers)
+    return jsonify(session.get('user'))
+
+
+# logout
+@app.route("/user/logout", methods=["GET", "POST"])
+def logout():
+    session.pop('user')
+    session.clear()
+    return jsonify('status', 'OK')
+
+
+# add user
+@app.route("/admin/user", methods=['PUT'])
+def add_user():
+    # TODO
+    pass
+
+
+# update user
+@app.route("/admin/user", methods=['POST'])
+def update_user():
+    # TODO
+    pass
+
+
+# delete user
+@app.route("/admin/user", methods=['DELETE'])
+def delete_user():
+    # TODO
+    pass
 
 
 # 调用gitlab API获取最新的git仓库信息，并更新到数据库
@@ -214,9 +266,16 @@ def delete_publishment():
 
 
 # 发布应用
-@app.route("/publish", methods=['POST'])
+@app.route("/publish", methods=['POST', 'GET'])
 def publish():
     id = get_parameter('id')
+
+    # TODO 暂时此处处理cookie，给要发布的客户端增加标识（第一次）
+    # 如果队列存在当前客户端对该id的发布，那么拒绝；否者，执行或放入队列
+    if request.cookies.get('publish_client_id') is None:
+        response = make_response(json.dumps({'status': 'OK'}))
+        response.set_cookie('publish_client_id', uuid.uuid4().hex)
+        return response
 
     return json.dumps({'status': 'OK'})
 
@@ -224,27 +283,36 @@ def publish():
 def execute_cmd(**kwargs):
     params_json = kwargs
     p = subprocess.Popen("""python3 src/mymodules/devops.py \
+            --work_home={work_home} --source_file_dir={source_file_dir} \
             --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} --to_ip={to_ip} --to_project_home={to_project_home} \
             --to_process_name={to_process_name} --to_java_opts="{to_java_opts}" --git_merged_branch={git_merged_branch} --git_tag_version={git_tag_version} --git_tag_comment={git_tag_comment} --git_delete_temp_branch={git_delete_temp_branch}"""
-                         .format(git_repo=params_json.get('git_repo').get('ssh_url_to_repo'),
+                         .format(work_home=current_app.config.get('WORK_HOME'),
+                                 git_repo=params_json.get('git_repo').get('ssh_url_to_repo'),
                                  git_branches=params_json.get('git_branches'),
                                  project_name=params_json.get('git_repo').get('name'),
                                  profile=params_json.get('profile'),
+                                 source_file_dir=params_json.get('source_file_dir') if params_json.get(
+                                     'source_file_dir') is not None else '',
                                  to_ip=params_json.get('to_ip'), to_project_home=params_json.get('to_project_home'),
-                                 to_process_name=params_json.get('to_process_name') if params_json.get('to_process_name') is not None else '',
-                                 to_java_opts=params_json.get('to_java_opts') if params_json.get('to_java_opts') is not None else '',
-                                 git_merged_branch=params_json.get('git_merged_branch') if params_json.get('git_merged_branch') is not None else '',
-                                 git_tag_version=params_json.get('git_tag_version') if params_json.get('git_tag_version') is not None else '',
-                                 git_tag_comment=params_json.get('git_tag_comment') if params_json.get('git_tag_comment') is not None else '',
+                                 to_process_name=params_json.get('to_process_name') if params_json.get(
+                                     'to_process_name') is not None else '',
+                                 to_java_opts=params_json.get('to_java_opts') if params_json.get(
+                                     'to_java_opts') is not None else '',
+                                 git_merged_branch=params_json.get('git_merged_branch') if params_json.get(
+                                     'git_merged_branch') is not None else '',
+                                 git_tag_version=params_json.get('git_tag_version') if params_json.get(
+                                     'git_tag_version') is not None else '',
+                                 git_tag_comment=params_json.get('git_tag_comment') if params_json.get(
+                                     'git_tag_comment') is not None else '',
                                  git_delete_temp_branch=int(params_json.get('git_delete_temp_branch'))),
                          stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, shell=True, bufsize=1)
     try:
         for line in iter(p.stdout.readline, b''):
-            # print(line.decode(encoding="utf-8"), )
             socketio.emit('publish_response', {'data': line.decode(encoding="utf-8")})
     finally:
         p.stdout.close()
+    socketio.emit('publish_response', {'status': 'OK'})
 
 
 def get_parameter(key):
@@ -253,12 +321,12 @@ def get_parameter(key):
     return None
 
 
-@socketio.on('connect')
+@socketio.on('connect', namespace='publish')
 def test_connect():
     print("Socket client connected")
 
 
-@socketio.on('disconnect')
+@socketio.on('disconnect', namespace='publish')
 def test_disconnect():
     print('Socket Client disconnected')
 
@@ -282,9 +350,21 @@ def get_publishment_detail(id):
 
 @socketio.on('publish_event')
 def test_event(params):
-    print('publish event', params)
-    lock.acquire()
-    print(f'=======每次只能一条线程进来执行发布，thread.name: {threading.current_thread().name}')
+    # TODO 获取客户端唯一标识，决定在已有相同发布任务的情况下是丢弃任务还是放入队列进行排队
+    print('=============', request.headers)
+    if request.cookies.get('publish_client_id') is not None:
+        # TODO
+        pass
+    print('========publish event', params)
+    lock = get_my_lock(params['id'])
+    try_lock_result = lock.acquire(blocking=False)
+    if not try_lock_result:
+        socketio.emit('publish_response', {'message': '当前有相同发布正在进行，尝试本次发布最多等待10s'})
+        lock_result = lock.acquire(timeout=10)
+        if not lock_result:
+            print("=======lock timeout======")
+            socketio.emit('publish_response', {'message': '当前发布繁忙（等待10s超时），请稍后再试'})  # 特殊处理，前端弹框提示
+            return
     try:
         params_json = get_publishment_detail(params['id'])
         execute_cmd(**params_json)
@@ -292,4 +372,17 @@ def test_event(params):
         lock.release()
 
 
-lock = threading.Lock()
+global_lock_tool = threading.RLock()
+lock_dict = {'DEFAULT': threading.RLock()}
+
+
+def get_my_lock(obj=None):
+    if obj is None:
+        return lock_dict['DEFAULT']
+    global_lock_tool.acquire()
+    try:
+        if lock_dict.get(obj) is None:
+            lock_dict[obj] = threading.RLock()
+        return lock_dict[obj]
+    finally:
+        global_lock_tool.release()

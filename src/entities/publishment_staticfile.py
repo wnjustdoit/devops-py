@@ -11,8 +11,8 @@ class PublishmentStaticfile(Base, Entity):
     __tablename__ = 'publishment_staticfile'
 
     id = Column(Integer, Sequence('publishment_staticfile_id_seq'), primary_key=True, comment='主键id')
-    name = Column(String, nullable=False, comment='发布名称')
-    description = Column(String, nullable=False, comment='发布描述')
+    name = Column(String(64), nullable=False, comment='发布名称')
+    description = Column(String(128), nullable=False, comment='发布描述')
     git_repo_id = Column(Integer, ForeignKey('git_repo.id'), nullable=False, comment='git仓库id')
     git_branches = Column(String(32), nullable=False, comment='发布的git分支')
     to_ip = Column(String(64), nullable=False, comment='目标服务器ip')

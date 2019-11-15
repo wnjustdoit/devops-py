@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-# usage: python3 [script].py  [--git_repo=] [--git_branches=] [--project_name=] [--profile=] [--to_ip=] [--to_project_home=] [--to_process_name=] [--to_java_opts=] [--git_merged_branch=] [--git_tag_version=] [--git_tag_comment=] [--git_delete_temp_branch=]
-# eg: python3 devops.py --git_repo=git@192.168.1.248:mall/config-server.git --git_branches=develop --project_name=config-server --profile=dev --to_ip=192.168.1.248 --to_project_home=/home/project/mama_config_server --to_process_name=config-server --to_java_opts="-Xms768m -Xmx768m" --git_merged_branch= --git_tag_version= --git_tag_comment= --git_delete_temp_branch=0
-# 约定1：远程执行脚本路径：/home/devops/restart_jar.sh
+# usage: python3 [script].py [--work_home=] [--git_repo=] [--git_branches=] [--project_name=] [--profile=] [--to_ip=] [--to_project_home=] [--to_process_name=] [--to_java_opts=] [--git_merged_branch=] [--git_tag_version=] [--git_tag_comment=] [--git_delete_temp_branch=]
+# eg: python3 devops.py --work_home=/tmp/devops --git_repo=git@192.168.1.248:mall/config-server.git --git_branches=develop --project_name=config-server --profile=dev --to_ip=192.168.1.248 --to_project_home=/home/project/mama_config_server --to_process_name=config-server --to_java_opts="-Xms768m -Xmx768m" --git_merged_branch= --git_tag_version= --git_tag_comment= --git_delete_temp_branch=0
+# 约定1：远程执行脚本路径（工程见devops-sh）：/home/devops/restart_jar.sh
 # 约定2：打包完毕上传至远程服务器[path_to_project_home]/web/目录下
-# 其他：你可能需要更改一下发布系统的工作目录；如果作为Python脚本脱离web容器独立运行的话，注意服务器登录信息配置文件的路径
-# TODO: 可配置打包完毕后所需使用的jar文件所在位置（指定模块文件夹名dirname）
+# 其他：如果作为Python脚本脱离web容器独立运行的话，注意服务器登录信息配置文件的路径
 
 import os
 import sys
@@ -21,12 +20,12 @@ except Exception as e:
     from src.mymodules.sshcmd import scp_cmd, ssh_cmd
 
 # global variables
-work_home = "~/workspace/github/devops-py/devopstemp/"
+work_home = None
 server_passport_config_location = 'src/configs/server_passport.properties'
 
 
 def output_all(msg, resp=0, exit=False):
-    print(msg if resp != 0 else f'{msg}, status_code: {resp}')
+    print(msg if resp == 0 else f'{msg}, status_code: {resp}')
     if exit:
         sys.exit()
     else:
@@ -59,20 +58,23 @@ def output_std(msg):
     output_all(f'INFO: {msg}')
 
 
-def publish(git_repo, git_branches, project_name, profile, to_ip, to_project_home, to_process_name,
+def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_ip, to_project_home, to_process_name,
             to_java_opts, git_merged_branch, git_tag_version, git_tag_comment, git_delete_temp_branch):
     # declare extra parameters
     is_standalone_branch = True
     git_branches_array = git_branches.split(',')
 
     # verify parameters
-    if not git_repo or len(git_branches_array) == 0 \
-            or not project_name \
-            or not profile \
-            or not to_ip \
-            or not to_project_home \
-            or not to_process_name:
-        output_error('required parameters cannot be empty')
+    if git_repo is None or git_repo.strip() == '' \
+            or len(git_branches_array) == 0 \
+            or project_name is None or project_name.strip() == '' \
+            or profile is None or profile.strip() == '' \
+            or to_ip is None or to_ip.strip() == '' \
+            or to_project_home is None or to_project_home.strip() == '' \
+            or to_process_name is None or to_process_name.strip() == '':
+        output_error(
+            f'required parameters cannot be empty: git_repo:{git_repo}, git_branches:{git_branches}, '
+            f'project_name:{project_name}, profile:{profile}, to_ip:{to_ip}, to_project_home:{to_project_home}, to_process_name:{to_process_name}')
 
     if len(git_branches_array) > 1:
         is_standalone_branch = False
@@ -90,7 +92,7 @@ def publish(git_repo, git_branches, project_name, profile, to_ip, to_project_hom
     to_password = config.get(to_ip, 'password')
 
     # local project home
-    from_project_home = work_home + project_name
+    from_project_home = work_home + '/' + project_name
 
     output_std('>>> 清除历史项目痕迹，开始新的工作')
     resp = os.system(f'cd {work_home} && rm -rf {project_name}')
@@ -116,7 +118,7 @@ def publish(git_repo, git_branches, project_name, profile, to_ip, to_project_hom
     resp = os.system(f'cd {from_project_home} && mvn clean package -Dmaven.test.skip=true -P {profile} -U')
     output_strict(f'<<< maven打包结束，打包环境：{profile}', resp)
 
-    (status, filepath) = subprocess.getstatusoutput(f'ls {from_project_home}/target/*.*ar')
+    (status, filepath) = subprocess.getstatusoutput(f'ls {from_project_home}/{source_file_dir}/*.*ar')
     output_std(f'>>> SCP远程上传文件开始...')
     scp_result = scp_cmd(to_ip, to_password, filepath, f'{to_project_home}/web/', to_username)
     output_std(f'<<< SCP上传文件结束，状态：{scp_result}')
@@ -155,14 +157,15 @@ def publish(git_repo, git_branches, project_name, profile, to_ip, to_project_hom
 
 if __name__ == '__main__':
     # define variables
-    git_repo = git_branches = project_name = profile = to_ip = to_project_home = to_process_name = \
+    git_repo = git_branches = project_name = profile = source_file_dir = to_ip = to_project_home = to_process_name = \
         to_java_opts = git_merged_branch = git_tag_version = git_tag_comment = git_delete_temp_branch = None
 
     # receive parameters
     opts = None
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hgr:gb:pn:pf:ti:tph:tpn:tj:gmb:gtv:gtc:gdtb",
-                                   ["help", "git_repo=", "git_branches=", "project_name=", "profile=",
+        opts, args = getopt.getopt(sys.argv[1:], "hwh:gr:gb:pn:pf:sfd:ti:tph:tpn:tj:gmb:gtv:gtc:gdtb",
+                                   ["help", "work_home=", "git_repo=", "git_branches=", "project_name=", "profile=",
+                                    "source_file_dir=",
                                     "to_ip=", "to_project_home=", "to_process_name=", "to_java_opts=",
                                     "git_merged_branch=", "git_tag_version=", "git_tag_comment=",
                                     "git_delete_temp_branch="])
@@ -173,6 +176,8 @@ if __name__ == '__main__':
     for opt, arg in opts:
         if opt == '-h':
             output_std('Usage to see the source file')
+        elif opt in ("--work_home", "-wh"):
+            work_home = arg
         elif opt in ("--git_repo", "-gr"):
             git_repo = arg
         elif opt in ("--git_branches", "-gb"):
@@ -181,6 +186,8 @@ if __name__ == '__main__':
             project_name = arg
         elif opt in ("--profile", "-pf"):
             profile = arg
+        elif opt in ("--source_file_dir", "-sfd"):
+            source_file_dir = arg
         elif opt in ("--to_ip", "-ti"):
             to_ip = arg
         elif opt in ("--to_project_home", "-tph"):
@@ -199,5 +206,5 @@ if __name__ == '__main__':
             git_delete_temp_branch = arg
 
     # invoke publish function
-    publish(git_repo, git_branches, project_name, profile, to_ip, to_project_home, to_process_name,
+    publish(git_repo, git_branches, project_name, profile, source_file_dir, to_ip, to_project_home, to_process_name,
             to_java_opts, git_merged_branch, git_tag_version, git_tag_comment, git_delete_temp_branch)
