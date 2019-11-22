@@ -280,7 +280,7 @@ def publish():
     return json.dumps({'status': 'OK'})
 
 
-def execute_cmd(**kwargs):
+def execute_cmd(client_event, **kwargs):
     params_json = kwargs
     p = subprocess.Popen("""python3 src/mymodules/devops.py \
             --work_home={work_home} --source_file_dir={source_file_dir} \
@@ -309,10 +309,10 @@ def execute_cmd(**kwargs):
                          stderr=subprocess.STDOUT, shell=True, bufsize=1)
     try:
         for line in iter(p.stdout.readline, b''):
-            socketio.emit('publish_response', {'data': line.decode(encoding="utf-8")})
+            socketio.emit(client_event, {'data': line.decode(encoding="utf-8")})
     finally:
         p.stdout.close()
-    socketio.emit('publish_response', {'status': 'OK'})
+    socketio.emit(client_event, {'status': 'OK'})
 
 
 def get_parameter(key):
@@ -350,24 +350,23 @@ def get_publishment_detail(id):
 
 @socketio.on('publish_event')
 def test_event(params):
-    # TODO 获取客户端唯一标识，决定在已有相同发布任务的情况下是丢弃任务还是放入队列进行排队
-    print('=============', request.headers)
-    if request.cookies.get('publish_client_id') is not None:
-        # TODO
-        pass
-    print('========publish event', params)
+    if request.cookies.get('publish_client_id') is None:
+        print('ERROR: Get client cookie[publish_client_id] failed')
+        return
+    client_event = 'publish_response_' + request.cookies.get('publish_client_id')
+
     lock = get_my_lock(params['id'])
     try_lock_result = lock.acquire(blocking=False)
     if not try_lock_result:
-        socketio.emit('publish_response', {'message': '当前有相同发布正在进行，尝试本次发布最多等待10s'})
+        socketio.emit(client_event, {'message': '当前有相同发布正在进行，尝试本次发布最多等待10s'})
         lock_result = lock.acquire(timeout=10)
         if not lock_result:
-            print("=======lock timeout======")
-            socketio.emit('publish_response', {'message': '当前发布繁忙（等待10s超时），请稍后再试'})  # 特殊处理，前端弹框提示
+            socketio.emit(client_event, {'message': '当前发布繁忙（等待10s超时），请稍后再试'})
             return
+
     try:
         params_json = get_publishment_detail(params['id'])
-        execute_cmd(**params_json)
+        execute_cmd(client_event, **params_json)
     finally:
         lock.release()
 
