@@ -1,6 +1,7 @@
 #!/bin/bash
 export FLASK_APP=./src/main.py
+# alternative options: ['development', 'production']
 export FLASK_ENV=development
-export FLASK_DEBUG=1
-#flask run --host=0.0.0.0 --port=5000
+# alternative options: ['development', 'testing', 'production']
+export PROFILE=development
 flask app_run

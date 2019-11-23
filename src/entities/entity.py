@@ -5,13 +5,18 @@ from sqlalchemy import create_engine, Column, String, Integer, DateTime, or_, an
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from marshmallow import Schema, fields, post_load
+import os, sys
 
-db_url = 'localhost:5432'
-db_name = 'devops'
-db_user = 'wangnan'
-db_password = 'postgres'
+sys.path.append(os.path.realpath('.'))
+from src.configs.profiles import configs
 
-engine = create_engine(f'postgresql+psycopg2://{db_user}:{db_password}@{db_url}/{db_name}', echo=True)
+
+def get_profile_obj():
+    return configs[os.environ.get('PROFILE', default='development')]
+
+
+engine = create_engine(get_profile_obj().DATABASE_URI, echo=get_profile_obj().DEBUG)
+
 Session = sessionmaker(bind=engine)
 
 Base = declarative_base()

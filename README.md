@@ -10,23 +10,44 @@
 
 ---
 #### Python环境
-> - pip freeze >requirements.txt
-> - pip install -r requirements.txt
+###### 将本地依赖写入文件
+```
+pip3 freeze > requirements.txt
+```
+###### 安装依赖
+```
+pip3 install -r requirements.txt
+```
 
 ---
 #### 数据库备份与版本管理
 ###### 数据库备份与恢复
-* 定期备份，执行脚本：./database/db_backup.sh
-* 从备份中的sql脚本恢复，执行脚本：./database/db_rebuild.sh
+* 定期备份
+```
+./database/db_backup.sh
+```
+* 从备份中的sql脚本恢复
+```
+./database/db_rebuild.sh
+```
 
 ###### 数据库版本管理
-> - 自动生成升级脚本命令：```alembic revision --autogenerate -m "your comment"```
-> - 执行升级命令：```alembic upgrade head```
-> - 如需降级等其他操作，请查阅官网文档
-    
+* 自动生成升级脚本
+```
+alembic revision --autogenerate -m "your comment"
+```
+* 执行升级命令
+```
+alembic upgrade head
+```
+* 如需降级等其他操作，请查阅官网文档
+
 ###### 自动代码生成工具
 * 功能：从数据库自动生成model代码
-* 执行脚本：./database/db_2_model.sh
+* 执行脚本：
+```
+./database/db_2_model.sh
+```
 * 注意要点：
     > - 数据库表关系不加约束；
     > - 主键如果需要sequence，那么设置各自的sequence；

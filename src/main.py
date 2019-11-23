@@ -14,10 +14,11 @@ from .mymodules.pygitlab import GitlabAPI
 from .entities.entity import Session, or_
 from .entities.git_repo import GitRepo, GitRepoSchema
 from .entities.publishment import Publishment, PublishmentSchema
-from .configs.profiles import CURRENT_CONFIG_OBJECT
+from .configs.profiles import configs, DEFAULT_CONFIG_ENV
 
 app = Flask(__name__)
-app.config.from_object(CURRENT_CONFIG_OBJECT)
+profile = os.environ.get('PROFILE', default=DEFAULT_CONFIG_ENV)
+app.config.from_object(configs[profile])
 app.config['SECRET_KEY'] = os.urandom(24)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
 cors = CORS(app)
@@ -26,8 +27,7 @@ socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 @app.cli.command("app_run")
 def app_run():
-    socketio.run(app, host=current_app.config['HOST'], port=current_app.config['PORT'],
-                 debug=current_app.config['DEBUG'])
+    socketio.run(app, host=current_app.config['HOST'], port=current_app.config['PORT'])
 
 
 if __name__ == '__main__':
@@ -268,6 +268,11 @@ def delete_publishment():
 # 发布应用
 @app.route("/publish", methods=['POST', 'GET'])
 def publish():
+    # TODO 考虑将参数、会话、客户端标识、是否允许发布等校验前移到此处来判断
+    # TODO 暂时不允许git_repo相同的发布同时进行（可考虑构建项目和远程服务端启动服务分离成两部分，互不干扰）
+    # 唯一标识参考：session（user、cookie【不同客户端同时登录是否保持一致？】）、单独维护的cookie、发布id、git_repo_url（url、group、name）
+    if get_parameter('id') is None:
+        return json.dumps({'status': 'ERROR', 'message' : '发布id不可为空'})
     # TODO 暂时此处处理cookie，给要发布的客户端增加标识（第一次）；后续改为：登录后使用发布系统并借助会话的cookie来操作
     # 如果队列存在当前客户端对该id的发布，那么拒绝；否者，执行或放入队列
     if request.cookies.get('publish_client_id') is None:
@@ -306,7 +311,7 @@ def execute_cmd(client_event, publishment):
 
 
 def get_parameter(key):
-    if request.get_json():
+    if request.get_json() is not None:
         return request.get_json().get(key)
     return None
 

@@ -2,9 +2,9 @@
 # usage: python3 [script].py [--work_home=] [--git_repo=] [--git_branches=] [--project_name=] [--profile=] [--to_ip=] [--to_project_home=] [--to_process_name=] [--to_java_opts=] [--git_merged_branch=] [--git_tag_version=] [--git_tag_comment=] [--git_delete_temp_branch=]
 # eg: python3 devops.py --work_home=/tmp/devops --git_repo=git@192.168.1.248:mall/config-server.git --git_branches=develop --project_name=config-server --profile=dev --to_ip=192.168.1.248 --to_project_home=/home/project/mama_config_server --to_process_name=config-server --to_java_opts="-Xms768m -Xmx768m" --git_merged_branch= --git_tag_version= --git_tag_comment= --git_delete_temp_branch=0
 # 约定1：远程执行脚本路径（工程见devops-sh）：/home/devops/restart_jar.sh
-# 约定2：打包完毕上传至远程服务器[path_to_project_home]/web/目录下
-# 约定3：远程服务器项目备份目录：[path_to_project_home]/backup/
-# 其他：如果作为Python脚本脱离web容器独立运行的话，注意引入其他模块或配置文件的路径
+# 约定2：打包完毕上传至远程服务器[path_to_project_home]/web/目录下；远程服务器项目备份目录：[path_to_project_home]/backup/
+# 其他：如果作为Python脚本脱离web容器独立运行的话，注意引入其他模块或配置文件的路径；
+# 多分支发布时，临时分支命名格式：publish-temp-{%Y%m%d%H%M%S}
 
 import os
 import sys
@@ -14,11 +14,11 @@ import getopt
 import configparser
 
 try:
-    from sshcmd import scp_cmd, ssh_cmd
-except Exception as e:
-    print('WARN:', 'import error, try another path..')
     sys.path.append(os.path.realpath('.'))
     from src.mymodules.sshcmd import scp_cmd, ssh_cmd
+except Exception as e:
+    print('WARN:', 'import error, try another path..')
+    from sshcmd import scp_cmd, ssh_cmd
 
 # global variables
 work_home = None
@@ -106,14 +106,15 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     generated_timestamped_branch = ''
     if not is_standalone_branch:
         # temporary branch generated strategy(when multiple branches)
-        generated_timestamped_branch = "temp-" + time.strftime("%Y%m%d%H%M%S", time.localtime())
+        generated_timestamped_branch = "publish-temp-" + time.strftime("%Y%m%d%H%M%S", time.localtime())
         output_std(f'>>> 创建临时分支{generated_timestamped_branch}，并切到新分支上')
         resp = os.system(f'cd {from_project_home} && git checkout -b {generated_timestamped_branch}')
         output_strict(f'<<< 创建临时分支{generated_timestamped_branch}，并切到新分支上', resp)
         for each_branch in git_branches_array:
             output_std(f'>>> 在新分支上合并分支{each_branch}')
             resp = os.system(f'cd {from_project_home} && git merge {each_branch}')
-            output_strict(f'<<< 在新分支上合并分支{each_branch}', resp)
+            # ignore 256: merge: {branch} - not something we can merge  Did you mean this?
+            output_strict(f'<<< 在新分支上合并分支{each_branch}', resp if resp != 256 else 0)
 
     output_std(f'>>> maven开始打包，打包环境：{profile}')
     resp = os.system(f'cd {from_project_home} && mvn clean package -Dmaven.test.skip=true -P {profile} -U')
@@ -122,7 +123,7 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     # lookup local file location
     output_std(f'>>> 检查本地jar包是否生成：{from_project_home}/{source_file_dir}')
     (status, filepath) = subprocess.getstatusoutput(f'ls {from_project_home}/{source_file_dir}/*.*ar')
-    output_strict(f'<<< 检查本地jar包生成结果，状态：{status}', status)
+    output_strict(f'<<< 检查本地jar包生成结果', status)
 
     # check if remote folders exist or create ones(the devopser should check the project home manually)
     output_std(f'>>> SSH远程检查文件夹是否存在...')
@@ -149,25 +150,30 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     if ssh_cmd_result == 'FAILED':
         output_error('SSH远程执行命令失败！')
 
+    if not is_standalone_branch:
+        git_published_branch = generated_timestamped_branch
+    else:
+        git_published_branch = git_branches_array[0]
+    resp = os.system(
+        f'cd {from_project_home} && git push -u origin {git_published_branch}')
+
     if git_merged_branch is not None and git_merged_branch != '':
         output_std(f'>>> 切换到待合并到的分支: {git_merged_branch}')
         os.system(f'cd {from_project_home} && git checkout {git_merged_branch}')
-        output_relaxed(f'>>> 切换到待合并到的分支: {git_merged_branch}', resp)
-        if not is_standalone_branch:
-            resp = os.system(f'cd {from_project_home} && git merge {generated_timestamped_branch}')
-        else:
-            resp = os.system(f'cd {from_project_home} && git merge {git_branches_array[0]}')
-        output_relaxed(f'<<< 合并到分支: {git_merged_branch}', resp)
+        output_strict(f'>>> 切换到待合并到的分支: {git_merged_branch}', resp)
+        resp = os.system(
+            f'cd {from_project_home} && git merge {git_published_branch} && git push -u origin {git_merged_branch}')
+        output_strict(f'<<< 合并到远程分支: {git_merged_branch}', resp)
 
     if git_tag_version is not None and git_tag_version != '' and git_tag_comment is not None and git_tag_comment != '':
         output_std(f'>>> 打标签名：{git_tag_version}，注释：{git_tag_comment}')
-        resp = os.system(f'git tag -a {git_tag_version} -m {git_tag_comment}')
+        resp = os.system(f'cd {from_project_home} && git tag -a {git_tag_version} -m {git_tag_comment} && git push -u origin {git_tag_version}')
         output_relaxed(f'<<< 打标签名：{git_tag_version}，注释：{git_tag_comment}', resp)
 
     if git_delete_temp_branch is not None and git_delete_temp_branch != '' \
             and generated_timestamped_branch is not None and generated_timestamped_branch != '':
         output_std(f'>>> 删除远程临时分支：{generated_timestamped_branch}')
-        resp = os.system(f'git push origin --delete {generated_timestamped_branch}')
+        resp = os.system(f'cd {from_project_home} && git push origin --delete {generated_timestamped_branch}')
         output_relaxed(f'<<< 删除远程临时分支：{generated_timestamped_branch}', resp)
 
     output_std('<<<<<<<<<< 发布流程执行结束!! >>>>>>>>>>')
