@@ -268,9 +268,7 @@ def delete_publishment():
 # 发布应用
 @app.route("/publish", methods=['POST', 'GET'])
 def publish():
-    id = get_parameter('id')
-
-    # TODO 暂时此处处理cookie，给要发布的客户端增加标识（第一次）
+    # TODO 暂时此处处理cookie，给要发布的客户端增加标识（第一次）；后续改为：登录后使用发布系统并借助会话的cookie来操作
     # 如果队列存在当前客户端对该id的发布，那么拒绝；否者，执行或放入队列
     if request.cookies.get('publish_client_id') is None:
         response = make_response(json.dumps({'status': 'OK'}))
@@ -280,31 +278,24 @@ def publish():
     return json.dumps({'status': 'OK'})
 
 
-def execute_cmd(client_event, **kwargs):
-    params_json = kwargs
+def execute_cmd(client_event, publishment):
     p = subprocess.Popen("""python3 src/mymodules/devops.py \
             --work_home={work_home} --source_file_dir={source_file_dir} \
             --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} --to_ip={to_ip} --to_project_home={to_project_home} \
             --to_process_name={to_process_name} --to_java_opts="{to_java_opts}" --git_merged_branch={git_merged_branch} --git_tag_version={git_tag_version} --git_tag_comment={git_tag_comment} --git_delete_temp_branch={git_delete_temp_branch}"""
                          .format(work_home=current_app.config.get('WORK_HOME'),
-                                 git_repo=params_json.get('git_repo').get('ssh_url_to_repo'),
-                                 git_branches=params_json.get('git_branches'),
-                                 project_name=params_json.get('git_repo').get('name'),
-                                 profile=params_json.get('profile'),
-                                 source_file_dir=params_json.get('source_file_dir') if params_json.get(
-                                     'source_file_dir') is not None else '',
-                                 to_ip=params_json.get('to_ip'), to_project_home=params_json.get('to_project_home'),
-                                 to_process_name=params_json.get('to_process_name') if params_json.get(
-                                     'to_process_name') is not None else '',
-                                 to_java_opts=params_json.get('to_java_opts') if params_json.get(
-                                     'to_java_opts') is not None else '',
-                                 git_merged_branch=params_json.get('git_merged_branch') if params_json.get(
-                                     'git_merged_branch') is not None else '',
-                                 git_tag_version=params_json.get('git_tag_version') if params_json.get(
-                                     'git_tag_version') is not None else '',
-                                 git_tag_comment=params_json.get('git_tag_comment') if params_json.get(
-                                     'git_tag_comment') is not None else '',
-                                 git_delete_temp_branch=int(params_json.get('git_delete_temp_branch'))),
+                                 git_repo=publishment.git_repo.ssh_url_to_repo,
+                                 git_branches=publishment.git_branches,
+                                 project_name=publishment.git_repo.name,
+                                 profile=publishment.profile,
+                                 source_file_dir=publishment.source_file_dir if publishment.source_file_dir is not None else '',
+                                 to_ip=publishment.to_ip, to_project_home=publishment.to_project_home,
+                                 to_process_name=publishment.to_process_name if publishment.to_process_name is not None else '',
+                                 to_java_opts=publishment.to_java_opts if publishment.to_java_opts is not None else '',
+                                 git_merged_branch=publishment.git_merged_branch if publishment.git_merged_branch is not None else '',
+                                 git_tag_version=publishment.git_tag_version if publishment.git_tag_version is not None else '',
+                                 git_tag_comment=publishment.git_tag_comment if publishment.git_tag_comment is not None else '',
+                                 git_delete_temp_branch=int(publishment.git_delete_temp_branch)),
                          stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, shell=True, bufsize=1)
     try:
@@ -312,7 +303,6 @@ def execute_cmd(client_event, **kwargs):
             socketio.emit(client_event, {'data': line.decode(encoding="utf-8")})
     finally:
         p.stdout.close()
-    socketio.emit(client_event, {'status': 'OK'})
 
 
 def get_parameter(key):
@@ -339,13 +329,11 @@ def default_error_handler(e):
 def get_publishment_detail(id):
     session = Session()
     try:
-        result_object = session.query(Publishment).select_from(
+        return session.query(Publishment).select_from(
             Publishment).join(GitRepo,
                               Publishment.git_repo_id == GitRepo.id).filter(Publishment.id == id).one_or_none()
     finally:
         session.close()
-
-    return PublishmentSchema().dump(result_object)
 
 
 @socketio.on('publish_event')
@@ -353,22 +341,30 @@ def test_event(params):
     if request.cookies.get('publish_client_id') is None:
         print('ERROR: Get client cookie[publish_client_id] failed')
         return
-    client_event = 'publish_response_' + request.cookies.get('publish_client_id')
+    if params is None or params.get('id') is None:
+        print('ERROR: The publish id cannot be empty')
+        return
 
+    # union unique key, mainly consists of client user session id and business id
+    client_event = 'publish_response_' + request.cookies.get('publish_client_id') + '_' + str(params['id'])
+
+    # publish process
     lock = get_my_lock(params['id'])
-    try_lock_result = lock.acquire(blocking=False)
+    try_lock_result = lock.acquire(blocking=False)  # try lock once
     if not try_lock_result:
         socketio.emit(client_event, {'message': '当前有相同发布正在进行，尝试本次发布最多等待10s'})
-        lock_result = lock.acquire(timeout=10)
+        lock_result = lock.acquire(timeout=10)  # lock, timeout of 10 seconds
         if not lock_result:
             socketio.emit(client_event, {'message': '当前发布繁忙（等待10s超时），请稍后再试'})
             return
-
     try:
-        params_json = get_publishment_detail(params['id'])
-        execute_cmd(client_event, **params_json)
+        publishment = get_publishment_detail(params['id'])
+        execute_cmd(client_event, publishment)
     finally:
-        lock.release()
+        lock.release()  # release lock (if necessary)
+
+    # publish end
+    socketio.emit(client_event, {'status': 'OK', 'project': publishment.name})
 
 
 global_lock_tool = threading.RLock()
@@ -381,6 +377,7 @@ def get_my_lock(obj=None):
     global_lock_tool.acquire()
     try:
         if lock_dict.get(obj) is None:
+            # TODO limit length of dict
             lock_dict[obj] = threading.RLock()
         return lock_dict[obj]
     finally:

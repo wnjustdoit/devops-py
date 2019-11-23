@@ -3,7 +3,8 @@
 # eg: python3 devops.py --work_home=/tmp/devops --git_repo=git@192.168.1.248:mall/config-server.git --git_branches=develop --project_name=config-server --profile=dev --to_ip=192.168.1.248 --to_project_home=/home/project/mama_config_server --to_process_name=config-server --to_java_opts="-Xms768m -Xmx768m" --git_merged_branch= --git_tag_version= --git_tag_comment= --git_delete_temp_branch=0
 # 约定1：远程执行脚本路径（工程见devops-sh）：/home/devops/restart_jar.sh
 # 约定2：打包完毕上传至远程服务器[path_to_project_home]/web/目录下
-# 其他：如果作为Python脚本脱离web容器独立运行的话，注意服务器登录信息配置文件的路径
+# 约定3：远程服务器项目备份目录：[path_to_project_home]/backup/
+# 其他：如果作为Python脚本脱离web容器独立运行的话，注意引入其他模块或配置文件的路径
 
 import os
 import sys
@@ -118,16 +119,35 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     resp = os.system(f'cd {from_project_home} && mvn clean package -Dmaven.test.skip=true -P {profile} -U')
     output_strict(f'<<< maven打包结束，打包环境：{profile}', resp)
 
+    # lookup local file location
+    output_std(f'>>> 检查本地jar包是否生成：{from_project_home}/{source_file_dir}')
     (status, filepath) = subprocess.getstatusoutput(f'ls {from_project_home}/{source_file_dir}/*.*ar')
+    output_strict(f'<<< 检查本地jar包生成结果，状态：{status}', status)
+
+    # check if remote folders exist or create ones(the devopser should check the project home manually)
+    output_std(f'>>> SSH远程检查文件夹是否存在...')
+    ssh_cmd_result = ssh_cmd(to_ip, to_password,
+                             [
+                                 f'if [ ! -d {to_project_home}/web ]; then mkdir {to_project_home}/web; fi '
+                                 f'&& if [ ! -d {to_project_home}/backup ]; then mkdir {to_project_home}/backup; fi'],
+                             to_username)
+    output_std(f'<<< SSH远程检查文件夹是否存在，状态：{ssh_cmd_result}')
+    if ssh_cmd_result == 'FAILED':
+        output_error('SSH远程检查文件夹是否存在失败！')
+
     output_std(f'>>> SCP远程上传文件开始...')
     scp_result = scp_cmd(to_ip, to_password, filepath, f'{to_project_home}/web/', to_username)
-    output_std(f'<<< SCP上传文件结束，状态：{scp_result}')
+    output_std(f'<<< SCP远程上传文件结束，状态：{scp_result}')
+    if scp_result == 'FAILED':
+        output_error('SCP上传文件到远程服务器失败！')
 
-    output_std(f'>>> 远程执行命令开始...')
+    output_std(f'>>> SSH远程执行命令开始...')
     ssh_cmd_result = ssh_cmd(to_ip, to_password,
                              [f'sh /home/devops/restart_jar.sh {to_project_home} {to_process_name} "{to_java_opts}"'],
                              to_username)
-    output_std(f'<<< 远程执行命令结束，状态：{ssh_cmd_result}')
+    output_std(f'<<< SSH远程执行命令结束，状态：{ssh_cmd_result}')
+    if ssh_cmd_result == 'FAILED':
+        output_error('SSH远程执行命令失败！')
 
     if git_merged_branch is not None and git_merged_branch != '':
         output_std(f'>>> 切换到待合并到的分支: {git_merged_branch}')
