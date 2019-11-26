@@ -15,23 +15,25 @@ class PublishmentStaticfile(Base, Entity):
     description = Column(String(128), nullable=False, comment='发布描述')
     git_repo_id = Column(Integer, ForeignKey('git_repo.id'), nullable=False, comment='git仓库id')
     git_branches = Column(String(32), nullable=False, comment='发布的git分支')
+    source_file_dir = Column(String(64), nullable=True, default='', comment='发布文件的相对目录（相对于源项目的根目录）')
     to_ip = Column(String(64), nullable=False, comment='目标服务器ip')
     to_project_home = Column(String(64), nullable=False, comment='目标服务器主目录')
     git_repo = relationship("GitRepo", uselist=False, primaryjoin='PublishmentStaticfile.git_repo_id == GitRepo.id',
                             lazy=False)
 
-    def __init__(self, name, description, git_repo_id, git_branches, to_ip, to_project_home,
+    def __init__(self, name, description, git_repo_id, git_branches, source_file_dir, to_ip, to_project_home,
                  created_by=None):
         Entity.__init__(self, created_by)
         self.name = name
         self.description = description
         self.git_repo_id = git_repo_id
         self.git_branches = git_branches
+        self.source_file_dir = source_file_dir
         self.to_ip = to_ip
         self.to_project_home = to_project_home
 
 
 class PublishmentStaticfileSchema(Schema):
     id = git_repo_id = fields.Number()
-    name = description = git_branches = to_ip = to_project_home = fields.Str(missing=None)
+    name = description = git_branches = source_file_dir = to_ip = to_project_home = fields.Str(missing=None)
     git_repo = fields.Nested(GitRepoSchema, many=False)

@@ -2,26 +2,22 @@
 
 import paramiko
 from scp import SCPClient
-import sys
 
 
-def output(*args, sep=' ', end='\n', file=None):
-    print(*args, sep=sep, end=end, file=file)
-    sys.stdout.flush()
+def output(*args, sep=' ', end='\n', file=None, flush=True):
+    print(*args, sep=sep, end=end, file=file, flush=flush)
 
 
-def ssh_cmd(ip, passwd, cmd, username='root'):
+def ssh_cmd(ip, passwd, cmds, username='root', port=22, timeout=5, bufsize=1, exec_timeout=120):
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        ssh.connect(ip, 22, username, passwd, timeout=5)
-        for m in cmd:
-            stdin, stdout, stderr = ssh.exec_command(m, bufsize=1)
-            # stdin.close()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ip, port, username, passwd, timeout=timeout)
+        for cmd in cmds:
+            stdin, stdout, stderr = ssh.exec_command(cmd, bufsize, exec_timeout)
+            stdin.close()
             for line in iter(stdout.readline, ''):
-                # print('line', line.strip())
                 output(line, end="")
-        # output('%s\tOK\n' % ip)
         return 'OK'
     except Exception as e:
         output('%s\tSSH Error\n' % ip, e)
@@ -30,17 +26,21 @@ def ssh_cmd(ip, passwd, cmd, username='root'):
         ssh.close()
 
 
-def scp_cmd(ip, passwd, local_path, remote_path, username='root'):
+def scp_cmd(ip, passwd, local_path, remote_path, username='root', port=22, timeout=5, socket_timeout=60,
+            recursive=True):
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    scp = None
     try:
-        ssh.connect(ip, 22, username, passwd, timeout=5)
-        scp = SCPClient(ssh.get_transport(), socket_timeout=15)
-        scp.put(local_path, remote_path, recursive=True)
-        # output('%s\tOK\n' % ip)
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ip, port, username, passwd, timeout=timeout)
+        scp = SCPClient(ssh.get_transport(), socket_timeout=socket_timeout)
+        scp.put(local_path, remote_path, recursive)
+        scp.close()
         return 'OK'
     except Exception as e:
         output('%s\tSCP Error\n' % ip, e)
         return 'FAILED'
     finally:
+        if scp is not None:
+            scp.close()
         ssh.close()

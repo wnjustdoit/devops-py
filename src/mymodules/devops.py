@@ -16,47 +16,15 @@ import configparser
 try:
     sys.path.append(os.path.realpath('.'))
     from src.mymodules.sshcmd import scp_cmd, ssh_cmd
+    from src.mymodules.output import output_all, output_error, output_relaxed, output_std, output_strict, output_warn
 except Exception as e:
     print('WARN:', 'import error, try another path..')
     from sshcmd import scp_cmd, ssh_cmd
+    from output import output_all, output_error, output_relaxed, output_std, output_strict, output_warn
 
 # global variables
 work_home = None
 server_passport_config_location = 'src/configs/server_passport.properties'
-
-
-def output_all(msg, resp=0, exit=False):
-    print(msg if resp == 0 else f'{msg}, status_code: {resp}')
-    if exit:
-        sys.exit()
-    else:
-        sys.stdout.flush()
-
-
-def output_strict(msg, resp):
-    if resp != 0:
-        output_error(msg, resp)
-    else:
-        output_std(msg)
-
-
-def output_relaxed(msg, resp):
-    if resp != 0:
-        output_warn(msg, resp)
-    else:
-        output_std(msg)
-
-
-def output_error(msg, resp=-1, exit=True):
-    output_all(f'ERROR: {msg}', resp, exit)
-
-
-def output_warn(msg, resp=-1):
-    output_all(f'WARN: {msg}', resp)
-
-
-def output_std(msg):
-    output_all(f'INFO: {msg}')
 
 
 def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_ip, to_project_home, to_process_name,
@@ -103,6 +71,7 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     resp = os.system(f'cd {work_home} && git clone -b {place_holder_branch} {git_repo}')
     output_strict('<<< 克隆项目到发布系统本地', resp)
 
+    # when multiple branches
     generated_timestamped_branch = ''
     if not is_standalone_branch:
         # temporary branch generated strategy(when multiple branches)
@@ -121,12 +90,12 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     output_strict(f'<<< maven打包结束，打包环境：{profile}', resp)
 
     # lookup local file location
-    output_std(f'>>> 检查本地jar包是否生成：{from_project_home}/{source_file_dir}')
-    (status, filepath) = subprocess.getstatusoutput(f'ls {from_project_home}/{source_file_dir}/*.*ar')
-    output_strict(f'<<< 检查本地jar包生成结果', status)
+    output_std(f'>>> 检查本地jar包是否生成，目录路径：{from_project_home}/{source_file_dir}')
+    (status, file_path) = subprocess.getstatusoutput(f'ls {from_project_home}/{source_file_dir}/*.*ar')
+    output_strict(f'<<< 检查本地jar包生成结果，文件路径：{file_path}', status)
 
     # check if remote folders exist or create ones(the devopser should check the project home manually)
-    output_std(f'>>> SSH远程检查文件夹是否存在...')
+    output_std(f'>>> SSH远程检查文件夹是否存在（不存在则创建），目标目录：{to_project_home}/web，备份目录：{to_project_home}/backup')
     ssh_cmd_result = ssh_cmd(to_ip, to_password,
                              [
                                  f'if [ ! -d {to_project_home}/web ]; then mkdir {to_project_home}/web; fi '
@@ -136,13 +105,13 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     if ssh_cmd_result == 'FAILED':
         output_error('SSH远程检查文件夹是否存在失败！')
 
-    output_std(f'>>> SCP远程上传文件开始...')
-    scp_result = scp_cmd(to_ip, to_password, filepath, f'{to_project_home}/web/', to_username)
+    output_std(f'>>> SCP远程上传文件，from_file_path：{file_path}，to_folder_path：{to_project_home}/web/')
+    scp_result = scp_cmd(to_ip, to_password, file_path, f'{to_project_home}/web/', to_username)
     output_std(f'<<< SCP远程上传文件结束，状态：{scp_result}')
     if scp_result == 'FAILED':
         output_error('SCP上传文件到远程服务器失败！')
 
-    output_std(f'>>> SSH远程执行命令开始...')
+    output_std('>>> SSH远程执行命令开始...')
     ssh_cmd_result = ssh_cmd(to_ip, to_password,
                              [f'sh /home/devops/restart_jar.sh {to_project_home} {to_process_name} "{to_java_opts}"'],
                              to_username)
@@ -150,6 +119,7 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     if ssh_cmd_result == 'FAILED':
         output_error('SSH远程执行命令失败！')
 
+    # published branch
     if not is_standalone_branch:
         git_published_branch = generated_timestamped_branch
     else:
@@ -157,6 +127,7 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     resp = os.system(
         f'cd {from_project_home} && git push -u origin {git_published_branch}')
 
+    # merge branches
     if git_merged_branch is not None and git_merged_branch != '':
         output_std(f'>>> 切换到待合并到的分支: {git_merged_branch}')
         os.system(f'cd {from_project_home} && git checkout {git_merged_branch}')
@@ -165,11 +136,14 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
             f'cd {from_project_home} && git merge {git_published_branch} && git push -u origin {git_merged_branch}')
         output_strict(f'<<< 合并到远程分支: {git_merged_branch}', resp)
 
+    # git add tag
     if git_tag_version is not None and git_tag_version != '' and git_tag_comment is not None and git_tag_comment != '':
         output_std(f'>>> 打标签名：{git_tag_version}，注释：{git_tag_comment}')
-        resp = os.system(f'cd {from_project_home} && git tag -a {git_tag_version} -m {git_tag_comment} && git push -u origin {git_tag_version}')
+        resp = os.system(
+            f'cd {from_project_home} && git tag -a {git_tag_version} -m {git_tag_comment} && git push -u origin {git_tag_version}')
         output_relaxed(f'<<< 打标签名：{git_tag_version}，注释：{git_tag_comment}', resp)
 
+    # whether delete temporary branch
     if git_delete_temp_branch is not None and git_delete_temp_branch != '' \
             and generated_timestamped_branch is not None and generated_timestamped_branch != '':
         output_std(f'>>> 删除远程临时分支：{generated_timestamped_branch}')
