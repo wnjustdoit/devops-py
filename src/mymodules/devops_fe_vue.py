@@ -63,7 +63,9 @@ def publish(git_repo, git_branch, project_name, profile, source_file_dir, to_ip,
         output_error('SCP上传文件到远程服务器失败！')
 
     output_std(f'>>> 远程服务器目录文件如下：')
-    ssh_cmd(to_ip, to_password, ['echo "当前目录路径：$(pwd)"', f'echo "当前目录内容：" && ll -AhR {to_project_home}'], to_username)
+    ssh_cmd(to_ip, to_password,
+            [f'cd {to_project_home} && echo -e "当前目录路径：\n$(pwd)"', f'echo -e "当前目录内容：\n$(ls -Ahl {to_project_home})"'],
+            to_username)
 
     output_std('<<<<<<<<<< 发布流程执行结束!! >>>>>>>>>>')
 

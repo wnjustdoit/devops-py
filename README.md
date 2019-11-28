@@ -10,11 +10,19 @@
 
 ---
 #### Python环境
+###### 安装虚拟环境
+```
+virtualenv -p /usr/bin/python3 py3flask
+# 或者 python3 -m pip install virtualenvwrapper
+pip3 install flask
+```
+
 ###### 将本地依赖写入文件
 ```
 pip3 freeze > requirements.txt
 ```
-###### 安装依赖
+
+###### 从文件安装依赖
 ```
 pip3 install -r requirements.txt
 ```

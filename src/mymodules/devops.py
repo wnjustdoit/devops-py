@@ -63,11 +63,11 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     # local project home
     from_project_home = work_home + '/' + project_name
 
-    output_std('>>> 清除历史项目痕迹，开始新的工作')
+    output_std('>>> 清除历史项目痕迹，开始新的工作 [$step0]')
     resp = os.system(f'cd {work_home} && rm -rf {project_name}')
     output_strict('<<< 清除历史项目痕迹，开始新的工作', resp)
 
-    output_std('>>> 克隆项目到发布系统本地')
+    output_std('>>> 克隆项目到发布系统本地 [$step1]')
     resp = os.system(f'cd {work_home} && git clone -b {place_holder_branch} {git_repo}')
     output_strict('<<< 克隆项目到发布系统本地', resp)
 
@@ -75,22 +75,22 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     generated_timestamped_branch = ''
     if not is_standalone_branch:
         # temporary branch generated strategy(when multiple branches)
-        generated_timestamped_branch = "publish-temp-" + time.strftime("%Y%m%d%H%M%S", time.localtime())
+        generated_timestamped_branch = "devops-temp-" + time.strftime("%Y%m%d%H%M%S", time.localtime())
         output_std(f'>>> 创建临时分支{generated_timestamped_branch}，并切到新分支上')
         resp = os.system(f'cd {from_project_home} && git checkout -b {generated_timestamped_branch}')
         output_strict(f'<<< 创建临时分支{generated_timestamped_branch}，并切到新分支上', resp)
         for each_branch in git_branches_array:
             output_std(f'>>> 在新分支上合并分支{each_branch}')
-            resp = os.system(f'cd {from_project_home} && git merge {each_branch}')
+            resp = os.system(f'cd {from_project_home} && git merge origin/{each_branch}')
             # ignore 256: merge: {branch} - not something we can merge  Did you mean this?
             output_strict(f'<<< 在新分支上合并分支{each_branch}', resp if resp != 256 else 0)
 
-    output_std(f'>>> maven开始打包，打包环境：{profile}')
+    output_std(f'>>> maven开始打包，打包环境：{profile} [$step2]')
     resp = os.system(f'cd {from_project_home} && mvn clean package -Dmaven.test.skip=true -P {profile} -U')
     output_strict(f'<<< maven打包结束，打包环境：{profile}', resp)
 
     # lookup local file location
-    output_std(f'>>> 检查本地jar包是否生成，目录路径：{from_project_home}/{source_file_dir}')
+    output_std(f'>>> 检查本地jar包是否生成，目录路径：{from_project_home}/{source_file_dir} [$step3]')
     (status, file_path) = subprocess.getstatusoutput(f'ls {from_project_home}/{source_file_dir}/*.*ar')
     output_strict(f'<<< 检查本地jar包生成结果，文件路径：{file_path}', status)
 
@@ -105,13 +105,13 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     if ssh_cmd_result == 'FAILED':
         output_error('SSH远程检查文件夹是否存在失败！')
 
-    output_std(f'>>> SCP远程上传文件，from_file_path：{file_path}，to_folder_path：{to_project_home}/web/')
+    output_std(f'>>> SCP远程上传文件，from_file_path：{file_path}，to_folder_path：{to_project_home}/web/ [$step4]')
     scp_result = scp_cmd(to_ip, to_password, file_path, f'{to_project_home}/web/', to_username)
     output_std(f'<<< SCP远程上传文件结束，状态：{scp_result}')
     if scp_result == 'FAILED':
         output_error('SCP上传文件到远程服务器失败！')
 
-    output_std('>>> SSH远程执行命令开始...')
+    output_std('>>> SSH远程执行命令开始... [$step5]')
     ssh_cmd_result = ssh_cmd(to_ip, to_password,
                              [f'sh /home/devops/restart_jar.sh {to_project_home} {to_process_name} "{to_java_opts}"'],
                              to_username)
@@ -124,8 +124,10 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
         git_published_branch = generated_timestamped_branch
     else:
         git_published_branch = git_branches_array[0]
+    output_std(f'>>> 推送当前发布分支：{git_published_branch}到远程 [$step6]')
     resp = os.system(
         f'cd {from_project_home} && git push -u origin {git_published_branch}')
+    output_std(f'<<< 推送当前发布分支：{git_published_branch}到远程')
 
     # merge branches
     if git_merged_branch is not None and git_merged_branch != '':
@@ -133,7 +135,7 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
         os.system(f'cd {from_project_home} && git checkout {git_merged_branch}')
         output_strict(f'>>> 切换到待合并到的分支: {git_merged_branch}', resp)
         resp = os.system(
-            f'cd {from_project_home} && git merge {git_published_branch} && git push -u origin {git_merged_branch}')
+            f'cd {from_project_home} && git merge origin/{git_published_branch} && git push -u origin {git_merged_branch}')
         output_strict(f'<<< 合并到远程分支: {git_merged_branch}', resp)
 
     # git add tag
@@ -150,7 +152,7 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
         resp = os.system(f'cd {from_project_home} && git push origin --delete {generated_timestamped_branch}')
         output_relaxed(f'<<< 删除远程临时分支：{generated_timestamped_branch}', resp)
 
-    output_std('<<<<<<<<<< 发布流程执行结束!! >>>>>>>>>>')
+    output_std('<<<<<<<<<< 发布流程执行结束!! >>>>>>>>>> [$step7]')
 
     return 'PUBLISH OVER'
 

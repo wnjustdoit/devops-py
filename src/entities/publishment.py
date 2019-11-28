@@ -14,7 +14,7 @@ class Publishment(Base, Entity):
     name = Column(String(64), nullable=False, comment='发布名称')
     description = Column(String(128), nullable=False, comment='发布描述')
     git_repo_id = Column(Integer, ForeignKey('git_repo.id'), nullable=False, comment='git仓库id')
-    git_branches = Column(String(32), nullable=False, comment='发布的git分支')
+    git_branches = Column(String(64), nullable=False, comment='发布的git分支')
     profile = Column(String(8), nullable=False, comment='发布环境')
     source_file_dir = Column(String(64), nullable=True, default='target', comment='发布文件的相对目录（相对于源项目的根目录）')
     to_ip = Column(String(64), nullable=False, comment='目标服务器ip，多个以半角逗号分隔')

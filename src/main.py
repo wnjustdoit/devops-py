@@ -18,7 +18,7 @@ from .publishment_api import publishment_api, get_publishment_detail
 from .publishment_staticfile_api import publishment_staticfile_api, get_publishment_detail_static
 from .publishment_fe_vue_api import publishment_fe_vue_api, get_publishment_detail_fe
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_path='')
 profile = os.environ.get('PROFILE', default=DEFAULT_CONFIG_ENV)
 app.config.from_object(configs[profile])
 app.config['SECRET_KEY'] = os.urandom(24)

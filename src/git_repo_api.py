@@ -24,6 +24,10 @@ def fetch_git_repos_2_db():
             git_repo.created_by = 'system-auto'
             git_repo.last_updated_at = git_repo.created_at
             git_repo.last_updated_by = git_repo.created_by
+            # 特殊处理
+            git_repo.ssh_url_to_repo = git_repo.ssh_url_to_repo.replace('192.168.1.248', 'git.mamaqunaer.cc')
+            git_repo.http_url_to_repo = git_repo.http_url_to_repo.replace('192.168.1.248:8080', 'git.mamaqunaer.cc')
+            git_repo.web_url = git_repo.web_url.replace('192.168.1.248:8080', 'git.mamaqunaer.cc')
             session.merge(git_repo)
         session.commit()
     finally:

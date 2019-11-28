@@ -22,8 +22,7 @@ class TestingConfig(BaseConfig):
 
 
 class ProductionConfig(BaseConfig):
-    HOST = '127.0.0.1'
-    PORT = 5555
+    HOST = '192.168.1.248'
     WORK_HOME = '/home/devops/workhome'
     DATABASE_URI = 'postgresql+psycopg2://wangnan:postgres@192.168.1.248:5432/devops'
 
