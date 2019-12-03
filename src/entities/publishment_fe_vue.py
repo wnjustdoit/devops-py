@@ -11,8 +11,8 @@ class PublishmentFeVue(Base, Entity):
     __tablename__ = 'publishment_fe_vue'
 
     id = Column(Integer, Sequence('publishment_fe_vue_id_seq'), primary_key=True, comment='主键id')
-    name = Column(String(64), nullable=False, comment='发布名称')
-    description = Column(String(128), nullable=False, comment='发布描述')
+    name = Column(String(128), nullable=False, comment='发布名称')
+    description = Column(String(256), nullable=False, comment='发布描述')
     git_repo_id = Column(Integer, ForeignKey('git_repo.id'), nullable=False, comment='git仓库id')
     git_branches = Column(String(32), nullable=False, comment='发布的git分支')
     profile = Column(String(8), nullable=False, comment='发布环境')

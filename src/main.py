@@ -128,7 +128,7 @@ def execute_cmd(client_event, publishment):
                                  git_tag_comment=publishment.git_tag_comment if publishment.git_tag_comment is not None else '',
                                  git_delete_temp_branch=int(publishment.git_delete_temp_branch)),
                          stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, shell=True, bufsize=1)
+                         stderr=subprocess.STDOUT, shell=True, bufsize=0)
     process_output(p, client_event)
 
 
@@ -161,7 +161,7 @@ def execute_cmd_fe(client_event, publishment_fe):
                                  source_file_dir=publishment_fe.source_file_dir if publishment_fe.source_file_dir is not None else '',
                                  to_ip=publishment_fe.to_ip, to_project_home=publishment_fe.to_project_home),
                          stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, shell=True, bufsize=1)
+                         stderr=subprocess.STDOUT, shell=True, bufsize=0)
     process_output(p, client_event)
 
 

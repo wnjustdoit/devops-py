@@ -50,7 +50,7 @@ def publish(git_repo, git_branch, project_name, profile, source_file_dir, to_ip,
     output_strict('<<< 克隆项目到发布系统本地', resp)
 
     output_std('>>> npm构建开始')
-    resp = os.system(f'cd {from_project_home} && npm install && npm run {profile}')
+    resp = os.system(f'cd {from_project_home} && cnpm install && cnpm run {profile}')
     output_strict('<<< npm构建结束', resp)
 
     # search file or file folder
