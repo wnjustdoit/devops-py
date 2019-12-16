@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import time
 
 from flask import Flask, escape, request, render_template, current_app
 from flask_cors import CORS
@@ -9,16 +10,21 @@ import subprocess
 import threading
 from datetime import timedelta
 
-from .entities.git_repo import GitRepo
 from .configs.profiles import configs, DEFAULT_CONFIG_ENV
+from .utils.pymail import MailAPI
+from .utils.pyimage import new_image
 
 from .user_api import user_api
 from .git_repo_api import git_repo_api
-from .publishment_api import publishment_api, get_publishment_detail
-from .publishment_staticfile_api import publishment_staticfile_api, get_publishment_detail_static
-from .publishment_fe_vue_api import publishment_fe_vue_api, get_publishment_detail_fe
+from .publishment_api import publishment_api, get_publishment_detail, get_publishment_by_repo_id
+from .publishment_staticfile_api import publishment_staticfile_api, get_publishment_detail_static, \
+    get_publishment_static_by_repo_id
+from .publishment_fe_vue_api import publishment_fe_vue_api, get_publishment_detail_fe, get_publishment_fe_by_repo_id
+from .publishment_nodejs_api import publishment_nodejs_api, get_publishment_detail_nodejs, \
+    get_publishment_nodejs_by_repo_id
+from .publishment_log_api import publishment_log_api, add_publishment_log, PublishmentLog
 
-app = Flask(__name__, static_folder='static', static_path='')
+app = Flask(__name__, static_folder='static', static_path='', template_folder='template')
 profile = os.environ.get('PROFILE', default=DEFAULT_CONFIG_ENV)
 app.config.from_object(configs[profile])
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -29,6 +35,8 @@ app.register_blueprint(git_repo_api)
 app.register_blueprint(publishment_api)
 app.register_blueprint(publishment_staticfile_api)
 app.register_blueprint(publishment_fe_vue_api)
+app.register_blueprint(publishment_nodejs_api)
+app.register_blueprint(publishment_log_api)
 
 cors = CORS(app)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
@@ -52,10 +60,6 @@ def index():
 # hello
 @app.route("/hello")
 def hello():
-    git_repo = GitRepo
-    git_repo.id = 112
-    print('--', git_repo)
-    # pprint('-=-', git_repo)
     name = request.args.get("name", "World")
     return f'Hello, {escape(name)}!'
 
@@ -80,111 +84,238 @@ def test_event(params):
     client_event = 'publish_response_' + type_prefix + request.cookies.get('publish_client_id') + '_' + str(id)
 
     # publish process
-    lock = get_my_lock(type_prefix + str(id))
+    lock = get_my_lock(type_prefix + str(id))  # publish id lock, group by type(such as backend, fe, node, static etc..)
     try_lock_result = lock.acquire(blocking=False)  # try lock once
     if not try_lock_result:
-        socketio.emit(client_event, {'message': '当前有相同发布正在进行，尝试本次发布最多等待10s'})
+        socketio.emit(client_event, {'message': '当前有相同发布（type + publishId）正在进行，尝试本次发布最多等待10s'})
         lock_result = lock.acquire(timeout=10)  # lock, timeout of 10 seconds
         if not lock_result:
             socketio.emit(client_event, {'message': '当前发布繁忙（等待10s超时），请稍后再试'})
             return
-    project_name = None
     try:
-        if params.get('type') is None or params['type'] == 'publishment':
-            publishment = get_publishment_detail(id)
-            execute_cmd(client_event, publishment)
-            project_name = publishment.name
-        elif params['type'] == 'static':
-            publishment_static = get_publishment_detail_static(id)
-            execute_cmd_static(client_event, publishment_static)
-            project_name = publishment_static.name
-        elif params['type'] == 'fe':
-            publishment_fe = get_publishment_detail_fe(id)
-            execute_cmd_fe(client_event, publishment_fe)
-            project_name = publishment_fe.name
+        publishment = get_publishment(params)
+        project_name = publishment.name
+        git_repo_id = publishment.git_repo_id
+        git_lock = get_my_lock(git_repo_id)  # git repo's id lock
+        try_git_lock_result = git_lock.acquire(blocking=False)  # try lock once
+        if not try_git_lock_result:
+            socketio.emit(client_event, {'message': '当前有相同发布（gitRepoId）正在进行，尝试本次发布最多等待10s'})
+            git_lock_result = git_lock.acquire(timeout=10)  # lock, timeout of 10 seconds
+            if not git_lock_result:
+                socketio.emit(client_event, {'message': '当前发布繁忙（等待10s超时），请稍后再试'})
+                return
+        try:
+            publishment_log_content = execute_publishment(client_event, params, publishment)
+            # TODO session.user.email
+            do_publishment_log(publishment, type_prefix, publishment_log_content, to_email=['wn@lianxingmaoyi.com'])
+        finally:
+            git_lock.release()  # release lock (if necessary/accessed)
     finally:
-        lock.release()  # release lock (if necessary)
+        lock.release()  # release lock (if necessary/accessed)
 
     # publish end
     socketio.emit(client_event, {'status': 'OK', 'project': project_name})
 
 
-def execute_cmd(client_event, publishment):
-    p = subprocess.Popen("""python3 src/mymodules/devops.py \
-            --work_home={work_home} --source_file_dir={source_file_dir} \
-            --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} --to_ip={to_ip} --to_project_home={to_project_home} \
-            --to_process_name={to_process_name} --to_java_opts="{to_java_opts}" --git_merged_branch={git_merged_branch} --git_tag_version={git_tag_version} --git_tag_comment={git_tag_comment} --git_delete_temp_branch={git_delete_temp_branch}"""
-                         .format(work_home=current_app.config.get('WORK_HOME'),
-                                 git_repo=publishment.git_repo.ssh_url_to_repo,
-                                 git_branches=publishment.git_branches,
-                                 project_name=publishment.git_repo.name,
-                                 profile=publishment.profile,
-                                 source_file_dir=publishment.source_file_dir if publishment.source_file_dir is not None else '',
-                                 to_ip=publishment.to_ip, to_project_home=publishment.to_project_home,
-                                 to_process_name=publishment.to_process_name if publishment.to_process_name is not None else '',
-                                 to_java_opts=publishment.to_java_opts if publishment.to_java_opts is not None else '',
-                                 git_merged_branch=publishment.git_merged_branch if publishment.git_merged_branch is not None else '',
-                                 git_tag_version=publishment.git_tag_version if publishment.git_tag_version is not None else '',
-                                 git_tag_comment=publishment.git_tag_comment if publishment.git_tag_comment is not None else '',
-                                 git_delete_temp_branch=int(publishment.git_delete_temp_branch)),
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, shell=True, bufsize=0)
-    process_output(p, client_event)
+def do_publishment_log(publishment, type, publishment_log_content, to_email: list = None):
+    log_name = f'PUBLISHED_{publishment.name}_' + time.strftime("%Y%m%d%H%M%S", time.localtime())
+    publishment_log = PublishmentLog(log_name, publishment.id, publishment_log_content, type)
+    add_publishment_log(publishment_log)
+    if to_email is None:
+        return
+    link = f"{current_app.config['SCHEMA']}://{current_app.config['HOST']}:{current_app.config['VIEW_PORT']}/#/publishedDetail?id={publishment_log.id}"
+    email_content = f'发布日志如下：<a href="{link}"><img src="cid:image1"></a>'
+    image_base64_bytes = new_image(1000, 4000, publishment_log_content, font_size=12)
+    MailAPI.GenericSender(MailAPI(), subject=log_name, to=to_email).add_text(
+        email_content, _type='html').add_image_base64str(image_base64_bytes, 'image1').send_default()
 
 
-def execute_cmd_static(client_event, publishment_static):
-    p = subprocess.Popen("""python3 src/mymodules/devops_staticfile.py \
+def get_publishment(params):
+    id = params.get('id')
+    if params.get('type') is None or params.get('type') == 'publishment':
+        return get_publishment_detail(id)
+    elif params.get('type') == 'static':
+        return get_publishment_detail_static(id)
+    elif params.get('type') == 'fe':
+        return get_publishment_detail_fe(id)
+    elif params.get('type') == 'nodejs':
+        return get_publishment_detail_nodejs(id)
+
+
+def execute_publishment(client_event, params, publishment):
+    if params.get('type') is None or params.get('type') == 'publishment':
+        p = execute_script(publishment)
+    elif params.get('type') == 'static':
+        p = execute_script_static(publishment)
+    elif params.get('type') == 'fe':
+        p = execute_script_fe(publishment)
+    elif params.get('type') == 'nodejs':
+        p = execute_script_nodejs(publishment)
+    else:
+        print(f'ERROR: Unsupported publish type [{params.get("type")}]')
+        return
+    return output_content(p, client_event)
+
+
+def execute_script(publishment):
+    return subprocess.Popen("""python3 src/scripts/devops.py \
+                --work_home={work_home} --source_file_dir={source_file_dir} \
+                --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} --to_ip={to_ip} --to_project_home={to_project_home} \
+                --to_process_name={to_process_name} --to_java_opts="{to_java_opts}" --git_merged_branch={git_merged_branch} --git_tag_version={git_tag_version} --git_tag_comment={git_tag_comment} --git_delete_temp_branch={git_delete_temp_branch}"""
+                            .format(work_home=current_app.config.get('WORK_HOME'),
+                                    git_repo=publishment.git_repo.ssh_url_to_repo,
+                                    git_branches=publishment.git_branches,
+                                    project_name=publishment.git_repo.name,
+                                    profile=publishment.profile,
+                                    source_file_dir=publishment.source_file_dir if publishment.source_file_dir is not None else '',
+                                    to_ip=publishment.to_ip, to_project_home=publishment.to_project_home,
+                                    to_process_name=publishment.to_process_name if publishment.to_process_name is not None else '',
+                                    to_java_opts=publishment.to_java_opts if publishment.to_java_opts is not None else '',
+                                    git_merged_branch=publishment.git_merged_branch if publishment.git_merged_branch is not None else '',
+                                    git_tag_version=publishment.git_tag_version if publishment.git_tag_version is not None else '',
+                                    git_tag_comment=publishment.git_tag_comment if publishment.git_tag_comment is not None else '',
+                                    git_delete_temp_branch=int(publishment.git_delete_temp_branch)),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, shell=True, bufsize=0)
+
+
+def execute_script_static(publishment_static):
+    return subprocess.Popen("""python3 src/scripts/devops_staticfile.py \
             --work_home={work_home} \
             --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} \
             --source_file_dir={source_file_dir} --to_ip={to_ip} --to_project_home={to_project_home}"""
-                         .format(work_home=current_app.config.get('WORK_HOME'),
-                                 git_repo=publishment_static.git_repo.ssh_url_to_repo,
-                                 git_branches=publishment_static.git_branches,
-                                 project_name=publishment_static.git_repo.name,
-                                 source_file_dir=publishment_static.source_file_dir if publishment_static.source_file_dir is not None else '',
-                                 to_ip=publishment_static.to_ip, to_project_home=publishment_static.to_project_home),
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, shell=True, bufsize=1)
-    process_output(p, client_event)
+                            .format(work_home=current_app.config.get('WORK_HOME'),
+                                    git_repo=publishment_static.git_repo.ssh_url_to_repo,
+                                    git_branches=publishment_static.git_branches,
+                                    project_name=publishment_static.git_repo.name,
+                                    source_file_dir=publishment_static.source_file_dir if publishment_static.source_file_dir is not None else '',
+                                    to_ip=publishment_static.to_ip, to_project_home=publishment_static.to_project_home),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, shell=True, bufsize=1)
 
 
-def execute_cmd_fe(client_event, publishment_fe):
-    p = subprocess.Popen("""python3 src/mymodules/devops_fe_vue.py \
+def execute_script_fe(publishment_fe):
+    return subprocess.Popen("""python3 src/scripts/devops_fe_vue.py \
             --work_home={work_home} \
             --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} \
             --source_file_dir={source_file_dir} --to_ip={to_ip} --to_project_home={to_project_home}"""
-                         .format(work_home=current_app.config.get('WORK_HOME'),
-                                 git_repo=publishment_fe.git_repo.ssh_url_to_repo,
-                                 git_branches=publishment_fe.git_branches,
-                                 project_name=publishment_fe.git_repo.name,
-                                 profile=publishment_fe.profile,
-                                 source_file_dir=publishment_fe.source_file_dir if publishment_fe.source_file_dir is not None else '',
-                                 to_ip=publishment_fe.to_ip, to_project_home=publishment_fe.to_project_home),
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, shell=True, bufsize=0)
-    process_output(p, client_event)
+                            .format(work_home=current_app.config.get('WORK_HOME'),
+                                    git_repo=publishment_fe.git_repo.ssh_url_to_repo,
+                                    git_branches=publishment_fe.git_branches,
+                                    project_name=publishment_fe.git_repo.name,
+                                    profile=publishment_fe.profile,
+                                    source_file_dir=publishment_fe.source_file_dir if publishment_fe.source_file_dir is not None else '',
+                                    to_ip=publishment_fe.to_ip, to_project_home=publishment_fe.to_project_home),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, shell=True, bufsize=0)
 
 
-def process_output(p, client_event):
+def execute_script_nodejs(publishment):
+    # TODO
+    if True:
+        return
+    return subprocess.Popen("""python3 src/scripts/devops_nodejs.py \
+            --work_home={work_home} \
+            --git_repo={git_repo} --git_branches={git_branches} --project_name={project_name} --profile={profile} \
+            --source_file_dir={source_file_dir} --to_ip={to_ip} --to_project_home={to_project_home}"""
+                            .format(work_home=current_app.config.get('WORK_HOME'),
+                                    git_repo=publishment.git_repo.ssh_url_to_repo,
+                                    git_branches=publishment.git_branches,
+                                    project_name=publishment.git_repo.name,
+                                    profile=publishment.profile,
+                                    source_file_dir=publishment.source_file_dir if publishment.source_file_dir is not None else '',
+                                    to_ip=publishment.to_ip, to_project_home=publishment.to_project_home),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, shell=True, bufsize=0)
+
+
+def output_content(p, client_event=None):
+    content = ''
     try:
         for line in iter(p.stdout.readline, b''):
-            socketio.emit(client_event, {'data': line.decode(encoding="utf-8")})
+            content += line.decode(encoding="utf-8")
+            if client_event is not None:
+                socketio.emit(client_event, {'data': line.decode(encoding="utf-8")})
     finally:
         p.stdout.close()
+    return content
 
 
-global_lock_tool = threading.RLock()
+# reentrant lock
+lock_for_getting_lock = threading.RLock()
 lock_dict = {'DEFAULT': threading.RLock()}
 
 
 def get_my_lock(obj=None):
     if obj is None:
         return lock_dict['DEFAULT']
-    global_lock_tool.acquire()
+    lock_for_getting_lock.acquire()
     try:
         if lock_dict.get(obj) is None:
             # TODO limit length of dict
             lock_dict[obj] = threading.RLock()
         return lock_dict[obj]
     finally:
-        global_lock_tool.release()
+        lock_for_getting_lock.release()
+
+
+def get_parameter(key):
+    if request.get_json() is not None:
+        return request.get_json().get(key)
+    return None
+
+
+@app.route("/web_hook/publish", methods=['GET', 'POST'])
+def web_hook():
+    object_kind = get_parameter('object_kind')
+    after = get_parameter('after')
+    project_id = get_parameter('project_id')
+    commits = get_parameter('commits')
+    current_commit = None
+    for commit in commits:
+        if commit['id'] == after:
+            current_commit = commit
+            break
+    keyword = 'devops'
+    if current_commit is not None and current_commit['message'].index(keyword) != -1:
+        do_publish_and_notify(project_id, str(get_parameter('user_email')))
+    return 'FINISHED'
+
+
+def do_publish_and_notify(git_repo_id, user_email):
+    publishments = get_publishment_by_repo_id(git_repo_id)
+    if publishments is not None and len(publishments) != 0:
+        for publishment in publishments:
+            publishment_log_content = output_content(execute_script(publishment))
+            do_publishment_log(publishment, 'backend', publishment_log_content, [user_email])
+            # file_path = current_app.config['WORK_HOME'] + '/logs/' + subject + '.txt'
+            # with open(file_path, "w", encoding='utf-8') as f:
+            #     f.write(publish_log)
+            #     f.close()
+            # MailAPI.GenericSender(MailAPI(), subject=subject, to=[user_email]).add_text(
+            #     content, _type='html').add_image_str(publish_log, 'image1').add_file(file_path).send_default()
+        return
+
+    publishments = get_publishment_fe_by_repo_id(git_repo_id)
+    if publishments is not None and len(publishments) != 0:
+        for publishment in publishments:
+            publishment_log_content = output_content(execute_script_fe(publishment))
+            do_publishment_log(publishment, 'fe_vue', publishment_log_content, [user_email])
+        return
+
+    publishments = get_publishment_static_by_repo_id(git_repo_id)
+    if publishments is not None and len(publishments) != 0:
+        for publishment in publishments:
+            publishment_log_content = output_content(execute_script_static(publishment))
+            do_publishment_log(publishment, 'staticfile', publishment_log_content, [user_email])
+        return
+
+    publishments = get_publishment_nodejs_by_repo_id(git_repo_id)
+    if publishments is not None and len(publishments) != 0:
+        for publishment in publishments:
+            publishment_log_content = output_content(execute_script_nodejs(publishment))
+            do_publishment_log(publishment, 'nodejs', publishment_log_content, [user_email])
+        return
+
+    print(f'WARN: current project [projectid:{git_repo_id}] has not been configured on the Devops stage')
+    return

@@ -1,0 +1,56 @@
+{
+  "object_kind": "push",
+  "before": "abc9bf64c6870b57992e1bcc8838cd8d55c4532a",
+  "after": "6eea32074ca75998d141e4fa222dfb249c360859",
+  "ref": "refs/heads/master",
+  "checkout_sha": "6eea32074ca75998d141e4fa222dfb249c360859",
+  "message": null,
+  "user_id": 34,
+  "user_name": "ç\u008e\u008bå\u008d\u0097",
+  "user_email": "wn@xxx.com",
+  "user_avatar": "http://www.gravatar.com/avatar/923214a2fbb1effcbe4c66a111de80b5?s=80\\u0026d=identicon",
+  "project_id": 174,
+  "project": {
+    "name": "config-server",
+    "description": "é\u0085\u008dç½®ä¸\u00adå¿\u0083",
+    "web_url": "http://192.168.1.248:8080/mall/config-server",
+    "avatar_url": null,
+    "git_ssh_url": "git@192.168.1.248:mall/config-server.git",
+    "git_http_url": "http://192.168.1.248:8080/mall/config-server.git",
+    "namespace": "mall",
+    "visibility_level": 0,
+    "path_with_namespace": "mall/config-server",
+    "default_branch": "master",
+    "homepage": "http://192.168.1.248:8080/mall/config-server",
+    "url": "git@192.168.1.248:mall/config-server.git",
+    "ssh_url": "git@192.168.1.248:mall/config-server.git",
+    "http_url": "http://192.168.1.248:8080/mall/config-server.git"
+  },
+  "commits": [
+    {
+      "id": "6eea32074ca75998d141e4fa222dfb249c360859",
+      "message": "devops å\u0088 æ\u008e\u0089xxxx\\n",
+      "timestamp": "2019-12-05T17:19:39+08:00",
+      "url": "http://192.168.1.248:8080/mall/config-server/commit/6eea32074ca75998d141e4fa222dfb249c360859",
+      "author": {
+        "name": "wangnan",
+        "email": "121971904@qq.com"
+      },
+      "added": [],
+      "modified": [],
+      "removed": [
+        "xxxxxxxxxx"
+      ]
+    }
+  ],
+  "total_commits_count": 1,
+  "repository": {
+    "name": "config-server",
+    "url": "git@192.168.1.248:mall/config-server.git",
+    "description": "é\u0085\u008dç½®ä¸\u00adå¿\u0083",
+    "homepage": "http://192.168.1.248:8080/mall/config-server",
+    "git_http_url": "http://192.168.1.248:8080/mall/config-server.git",
+    "git_ssh_url": "git@192.168.1.248:mall/config-server.git",
+    "visibility_level": 0
+  }
+}

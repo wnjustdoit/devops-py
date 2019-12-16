@@ -1,12 +1,14 @@
 #!/usr/bin/python3
 import uuid
 
+import configparser
 from flask import Blueprint, request, jsonify, make_response
 from sqlalchemy import or_
 
 from src.entities.entity import Session
 from src.entities.git_repo import GitRepo
 from src.entities.publishment import Publishment, PublishmentSchema
+from src.utils.sshcmd import ssh_cmd
 
 publishment_api = Blueprint('publishment_api', __name__)
 app = publishment_api
@@ -152,7 +154,76 @@ def get_publishment_detail(id):
         session.close()
 
 
+def get_publishment_by_repo_id(git_repo_id):
+    session = Session()
+    try:
+        return session.query(Publishment).select_from(Publishment).join(GitRepo,
+                                                                        Publishment.git_repo_id == GitRepo.id).filter(
+            Publishment.git_repo_id == git_repo_id).all()
+    finally:
+        session.close()
+
+
 def get_parameter(key):
     if request.get_json() is not None:
         return request.get_json().get(key)
     return None
+
+
+server_passport_config_location = 'src/configs/server_passport.cfg'
+
+
+# 查看应用状态（是否停机）
+@app.route("/publish/status/<int:id>")
+def publish_status(id):
+    publishment = get_publishment_detail(id)
+    # read config.properties
+    config = configparser.ConfigParser()
+    config.read(server_passport_config_location)
+    to_username = config.get(publishment.to_ip, 'username')
+    to_password = config.get(publishment.to_ip, 'password')
+    ssh_cmd_result = ssh_cmd(publishment.to_ip, to_password,
+                             [
+                                 f'source common.sh; get_process_id; echo $temp_process_id'],
+                             to_username)
+    return jsonify({'status': ssh_cmd_result})
+
+
+# 停止应用
+@app.route("/publish/shutdown/<int:id>", methods=['POST', 'GET'])
+def publish_shutdown(id):
+    publishment = get_publishment_detail(id)
+    # read config.properties
+    config = configparser.ConfigParser()
+    config.read(server_passport_config_location)
+    to_username = config.get(publishment.to_ip, 'username')
+    to_password = config.get(publishment.to_ip, 'password')
+    ssh_cmd_result = ssh_cmd(publishment.to_ip, to_password,
+                             [
+                                 f'find_jar_result=$(find . -maxdepth 1 -name "*.jar"); if [ "$find_jar_result" != "" ]; then '
+                                 f'sh /home/devops/shutdown.sh {publishment.to_process_name}; else '
+                                 f'sh /home/devops/shutdown_war.sh {publishment.to_project_home} {publishment.to_process_name}; fi'],
+                             to_username)
+    if ssh_cmd_result == 'OK':
+        print(f'Application[publishment:{publishment.name}] shutdown SUCCESS!')
+    return jsonify({'status': ssh_cmd_result})
+
+
+# 重启应用
+@app.route("/publish/reboot/<int:id>", methods=['POST', 'GET'])
+def publish_reboot(id):
+    publishment = get_publishment_detail(id)
+    # read config.properties
+    config = configparser.ConfigParser()
+    config.read(server_passport_config_location)
+    to_username = config.get(publishment.to_ip, 'username')
+    to_password = config.get(publishment.to_ip, 'password')
+    ssh_cmd_result = ssh_cmd(publishment.to_ip, to_password,
+                             [
+                                 f'find_jar_result=$(find . -maxdepth 1 -name "*.jar"); if [ "$find_jar_result" != "" ]; then '
+                                 f'sh /home/devops/reboot_jar.sh {publishment.to_project_home} {publishment.to_process_name} "{publishment.to_java_opts}"; else '
+                                 f'sh /home/devops/reboot_war.sh {publishment.to_project_home} {publishment.to_process_name}; fi'],
+                             to_username)
+    if ssh_cmd_result == 'OK':
+        print(f'Application[publishment:{publishment.name}] reboot SUCCESS!')
+    return jsonify({'status': ssh_cmd_result})

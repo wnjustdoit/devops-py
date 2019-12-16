@@ -34,17 +34,17 @@ def publishment_list():
                                                        GitRepo.web_url.like('%' + keyword + '%'),
                                                        GitRepo.path_with_namespace.like('%' + keyword + '%')
                                                        ))
-        publishment_git_repos_objects = base_statement.limit(page_size).offset(
+        publishment_objects = base_statement.limit(page_size).offset(
             (int(current_page) - 1) * page_size).all()
-        if len(publishment_git_repos_objects) != 0:
-            publishment_git_repos_counts = base_statement.count()
+        if len(publishment_objects) != 0:
+            publishment_counts = base_statement.count()
         else:
-            publishment_git_repos_counts = 0
+            publishment_counts = 0
     finally:
         session.close()
 
-    result_list = PublishmentStaticfileSchema(many=True).dump(publishment_git_repos_objects)
-    result = {'data': result_list, 'total': publishment_git_repos_counts}
+    result_list = PublishmentStaticfileSchema(many=True).dump(publishment_objects)
+    result = {'data': result_list, 'total': publishment_counts}
 
     return jsonify(result)
 
@@ -143,6 +143,17 @@ def get_publishment_detail_static(id):
             PublishmentStaticfile).join(GitRepo,
                                         PublishmentStaticfile.git_repo_id == GitRepo.id).filter(
             PublishmentStaticfile.id == id).one_or_none()
+    finally:
+        session.close()
+
+
+def get_publishment_static_by_repo_id(git_repo_id):
+    session = Session()
+    try:
+        return session.query(PublishmentStaticfile).select_from(
+            PublishmentStaticfile).join(GitRepo,
+                                        PublishmentStaticfile.git_repo_id == GitRepo.id).filter(
+            PublishmentStaticfile.id == git_repo_id).all()
     finally:
         session.close()
 

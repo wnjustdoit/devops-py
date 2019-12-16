@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import os
+import sys
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, or_, and_, tuple_
+
+from marshmallow import Schema, fields
+from sqlalchemy import create_engine, Column, String, Integer, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from marshmallow import Schema, fields, post_load
-import os, sys
 
 sys.path.append(os.path.realpath('.'))
 from src.configs.profiles import configs
@@ -47,3 +49,4 @@ class Entity:
 class EntitySchema(Schema):
     created_at = last_updated_at = fields.DateTime()
     created_by = last_updated_by = fields.Str()
+    is_deleted = fields.Number()

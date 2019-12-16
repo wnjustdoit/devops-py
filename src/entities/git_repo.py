@@ -9,7 +9,7 @@ class GitRepo(Entity, Base):
     __tablename__ = 'git_repo'
 
     id = Column(Integer, Sequence('git_repo_id_seq'), primary_key=True)
-    description = Column(String(128))
+    description = Column(String(128), nullable=True)
     ssh_url_to_repo = Column(String(128), nullable=False)
     http_url_to_repo = Column(String(128), nullable=False)
     web_url = Column(String(128), nullable=False)
@@ -30,11 +30,6 @@ class GitRepo(Entity, Base):
         self.name_with_namespace = name_with_namespace
         self.path = path
         self.path_with_namespace = path_with_namespace
-
-    # TODO
-    # def __repr__(self):
-    #     print(GitRepoSchema.dump(self))
-    #     return "<GitRepo(id={self.id})>".format(self=self)
 
 
 class GitRepoSchema(EntitySchema):

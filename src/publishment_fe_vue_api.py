@@ -147,6 +147,17 @@ def get_publishment_detail_fe(id):
         session.close()
 
 
+def get_publishment_fe_by_repo_id(git_repo_id):
+    session = Session()
+    try:
+        return session.query(PublishmentFeVue).select_from(
+            PublishmentFeVue).join(GitRepo,
+                                   PublishmentFeVue.git_repo_id == GitRepo.id).filter(
+            PublishmentFeVue.id == git_repo_id).all()
+    finally:
+        session.close()
+
+
 def get_parameter(key):
     if request.get_json() is not None:
         return request.get_json().get(key)
