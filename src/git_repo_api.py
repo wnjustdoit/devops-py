@@ -45,6 +45,9 @@ def git_repos():
         result_list = GitRepoSchema(many=True).dump(git_repos_objects)
     finally:
         session.close()
+    for result in result_list:
+        result['created_at'] = datetime.strptime(result['created_at'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M:%S')
+        result['last_updated_at'] = datetime.strptime(result['last_updated_at'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M:%S')
 
     return jsonify(result_list)
 

@@ -63,7 +63,8 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
     output_strict('<<< 清除历史项目痕迹，开始新的工作', resp)
 
     output_std('>>> 克隆项目到发布系统本地 [$step1]')
-    resp = os.system(f'cd {work_home} && git clone {git_repo} -b {place_holder_branch} --depth 1')
+    resp = os.system(f'cd {work_home} && git clone {git_repo} -b {place_holder_branch}' + (
+        ' --depth 1' if is_standalone_branch else ''))  # 不是多分支时才浅克隆
     output_strict('<<< 克隆项目到发布系统本地', resp)
 
     # when multiple branches
@@ -143,6 +144,9 @@ def publish(git_repo, git_branches, project_name, profile, source_file_dir, to_i
         output_strict(f'>>> 切换到待合并到的分支: {git_merged_branch}', resp)
         resp = os.system(
             f'cd {from_project_home} && git merge origin/{git_published_branch} && git push -u origin {git_merged_branch}')
+        # 忽略 256 异常："not something we can merge"
+        if resp == 256:
+            resp = 0
         output_strict(f'<<< 合并到远程分支: {git_merged_branch}', resp)
 
     # git add tag

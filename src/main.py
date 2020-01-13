@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 import time
 
-from flask import Flask, escape, request, render_template, current_app
+from flask import Flask, escape, request, render_template, current_app, session as web_session
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
 import os
 import subprocess
 import threading
-from datetime import timedelta
+from datetime import timedelta, datetime
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from .configs.profiles import configs, DEFAULT_CONFIG_ENV
 from .utils.pymail import MailAPI
@@ -22,9 +23,9 @@ from .publishment_staticfile_api import publishment_staticfile_api, get_publishm
 from .publishment_fe_vue_api import publishment_fe_vue_api, get_publishment_detail_fe, get_publishment_fe_by_repo_id
 from .publishment_nodejs_api import publishment_nodejs_api, get_publishment_detail_nodejs, \
     get_publishment_nodejs_by_repo_id
-from .publishment_log_api import publishment_log_api, add_publishment_log, PublishmentLog
+from .publishment_log_api import publishment_log_api, add_publishment_log, PublishmentLog, clear_publishment_log
 
-app = Flask(__name__, static_folder='static', static_path='', template_folder='template')
+app = Flask(__name__, static_folder='static', static_path='', template_folder='templates')
 profile = os.environ.get('PROFILE', default=DEFAULT_CONFIG_ENV)
 app.config.from_object(configs[profile])
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -70,7 +71,7 @@ def default_error_handler(e):
 
 
 @socketio.on('publish_event')
-def test_event(params):
+def publish_event(params):
     if request.cookies.get('publish_client_id') is None:
         print('ERROR: Get client cookie[publish_client_id] failed')
         return
@@ -79,6 +80,11 @@ def test_event(params):
         return
     id = params['id']
     type_prefix = '' if params.get('type') is None else params['type'] + '_'
+
+    user_json = web_session.get('user')
+    if user_json is None:
+        return
+    email = web_session['user'].get('email')
 
     # union unique key, mainly consists of client user session id and business id
     client_event = 'publish_response_' + type_prefix + request.cookies.get('publish_client_id') + '_' + str(id)
@@ -106,8 +112,8 @@ def test_event(params):
                 return
         try:
             publishment_log_content = execute_publishment(client_event, params, publishment)
-            # TODO session.user.email
-            do_publishment_log(publishment, type_prefix, publishment_log_content, to_email=['wn@lianxingmaoyi.com'])
+            to_email = [email]
+            do_publishment_log(publishment, type_prefix, publishment_log_content, to_email=to_email)
         finally:
             git_lock.release()  # release lock (if necessary/accessed)
     finally:
@@ -117,15 +123,16 @@ def test_event(params):
     socketio.emit(client_event, {'status': 'OK', 'project': project_name})
 
 
-def do_publishment_log(publishment, type, publishment_log_content, to_email: list = None):
+def do_publishment_log(publishment, publish_type, publishment_log_content, to_email: list = None,
+                       publish_way: str = 'browser'):
     log_name = f'PUBLISHED_{publishment.name}_' + time.strftime("%Y%m%d%H%M%S", time.localtime())
-    publishment_log = PublishmentLog(log_name, publishment.id, publishment_log_content, type)
+    publishment_log = PublishmentLog(log_name, publishment.id, publishment_log_content, publish_type, publish_way)
     add_publishment_log(publishment_log)
-    if to_email is None:
+    if to_email is None or len(to_email) == 0:
         return
     link = f"{current_app.config['SCHEMA']}://{current_app.config['HOST']}:{current_app.config['VIEW_PORT']}/#/publishedDetail?id={publishment_log.id}"
     email_content = f'发布日志如下：<a href="{link}"><img src="cid:image1"></a>'
-    image_base64_bytes = new_image(1000, 4000, publishment_log_content, font_size=12)
+    image_base64_bytes = new_image(1000, 3500, publishment_log_content, font_size=12)
     MailAPI.GenericSender(MailAPI(), subject=log_name, to=to_email).add_text(
         email_content, _type='html').add_image_base64str(image_base64_bytes, 'image1').send_default()
 
@@ -287,7 +294,7 @@ def do_publish_and_notify(git_repo_id, user_email):
     if publishments is not None and len(publishments) != 0:
         for publishment in publishments:
             publishment_log_content = output_content(execute_script(publishment))
-            do_publishment_log(publishment, 'backend', publishment_log_content, [user_email])
+            do_publishment_log(publishment, 'backend', publishment_log_content, [user_email], 'webhook')
             # file_path = current_app.config['WORK_HOME'] + '/logs/' + subject + '.txt'
             # with open(file_path, "w", encoding='utf-8') as f:
             #     f.write(publish_log)
@@ -300,22 +307,30 @@ def do_publish_and_notify(git_repo_id, user_email):
     if publishments is not None and len(publishments) != 0:
         for publishment in publishments:
             publishment_log_content = output_content(execute_script_fe(publishment))
-            do_publishment_log(publishment, 'fe_vue', publishment_log_content, [user_email])
+            do_publishment_log(publishment, 'fe_vue', publishment_log_content, [user_email], 'webhook')
         return
 
     publishments = get_publishment_static_by_repo_id(git_repo_id)
     if publishments is not None and len(publishments) != 0:
         for publishment in publishments:
             publishment_log_content = output_content(execute_script_static(publishment))
-            do_publishment_log(publishment, 'staticfile', publishment_log_content, [user_email])
+            do_publishment_log(publishment, 'staticfile', publishment_log_content, [user_email], 'webhook')
         return
 
     publishments = get_publishment_nodejs_by_repo_id(git_repo_id)
     if publishments is not None and len(publishments) != 0:
         for publishment in publishments:
             publishment_log_content = output_content(execute_script_nodejs(publishment))
-            do_publishment_log(publishment, 'nodejs', publishment_log_content, [user_email])
+            do_publishment_log(publishment, 'nodejs', publishment_log_content, [user_email], 'webhook')
         return
 
     print(f'WARN: current project [projectid:{git_repo_id}] has not been configured on the Devops stage')
     return
+
+
+scheduler = BackgroundScheduler()
+# 定时清理发布日志（30天前）
+scheduler.add_job(clear_publishment_log, trigger='cron', day_of_week='*', hour='3', minute='12', second='23')
+# test
+# scheduler.add_job(clear_publishment_log, trigger='interval', seconds=5)
+scheduler.start()

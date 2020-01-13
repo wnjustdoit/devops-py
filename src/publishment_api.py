@@ -8,7 +8,7 @@ from sqlalchemy import or_
 from src.entities.entity import Session
 from src.entities.git_repo import GitRepo
 from src.entities.publishment import Publishment, PublishmentSchema
-from src.utils.sshcmd import ssh_cmd
+from src.utils.sshcmd import ssh_cmd, ssh_cmd_one
 
 publishment_api = Blueprint('publishment_api', __name__)
 app = publishment_api
@@ -173,7 +173,7 @@ def get_parameter(key):
 server_passport_config_location = 'src/configs/server_passport.cfg'
 
 
-# 查看应用状态（是否停机）
+# 查看应用健康状态（是否停机）
 @app.route("/publish/status/<int:id>")
 def publish_status(id):
     publishment = get_publishment_detail(id)
@@ -182,11 +182,10 @@ def publish_status(id):
     config.read(server_passport_config_location)
     to_username = config.get(publishment.to_ip, 'username')
     to_password = config.get(publishment.to_ip, 'password')
-    ssh_cmd_result = ssh_cmd(publishment.to_ip, to_password,
-                             [
-                                 f'source common.sh; get_process_id; echo $temp_process_id'],
-                             to_username)
-    return jsonify({'status': ssh_cmd_result})
+    ssh_cmd_result_msg = ssh_cmd_one(publishment.to_ip, to_password,
+                                     'ps -ef | grep -w ' + publishment.to_process_name + ' | grep -v grep | awk \'{print $2}\'',
+                                     to_username)
+    return jsonify({'status': 'OK', 'process_id': ssh_cmd_result_msg})
 
 
 # 停止应用
@@ -200,9 +199,13 @@ def publish_shutdown(id):
     to_password = config.get(publishment.to_ip, 'password')
     ssh_cmd_result = ssh_cmd(publishment.to_ip, to_password,
                              [
-                                 f'find_jar_result=$(find . -maxdepth 1 -name "*.jar"); if [ "$find_jar_result" != "" ]; then '
-                                 f'sh /home/devops/shutdown.sh {publishment.to_process_name}; else '
-                                 f'sh /home/devops/shutdown_war.sh {publishment.to_project_home} {publishment.to_process_name}; fi'],
+                                 f'cd {publishment.to_project_home};'
+                                 f'find_jar_result=$(find . -maxdepth 1 -name "*.jar");'
+                                 f'if [ "$find_jar_result" != "" ]; then '
+                                 f'sh /home/devops/shutdown.sh {publishment.to_process_name};'
+                                 f'else '
+                                 f'sh /home/devops/shutdown_war.sh {publishment.to_project_home} {publishment.to_process_name};'
+                                 f'fi'],
                              to_username)
     if ssh_cmd_result == 'OK':
         print(f'Application[publishment:{publishment.name}] shutdown SUCCESS!')
@@ -220,9 +223,13 @@ def publish_reboot(id):
     to_password = config.get(publishment.to_ip, 'password')
     ssh_cmd_result = ssh_cmd(publishment.to_ip, to_password,
                              [
-                                 f'find_jar_result=$(find . -maxdepth 1 -name "*.jar"); if [ "$find_jar_result" != "" ]; then '
-                                 f'sh /home/devops/reboot_jar.sh {publishment.to_project_home} {publishment.to_process_name} "{publishment.to_java_opts}"; else '
-                                 f'sh /home/devops/reboot_war.sh {publishment.to_project_home} {publishment.to_process_name}; fi'],
+                                 f'cd {publishment.to_project_home};'
+                                 f'find_jar_result=$(find . -maxdepth 1 -name "*.jar");'
+                                 f'if [ "$find_jar_result" != "" ]; then '
+                                 f'sh /home/devops/reboot_jar.sh {publishment.to_project_home} {publishment.to_process_name} "{publishment.to_java_opts}";'
+                                 f'else '
+                                 f'sh /home/devops/reboot_war.sh {publishment.to_project_home} {publishment.to_process_name};'
+                                 f'fi'],
                              to_username)
     if ssh_cmd_result == 'OK':
         print(f'Application[publishment:{publishment.name}] reboot SUCCESS!')

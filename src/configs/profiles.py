@@ -18,7 +18,7 @@ class BaseConfig:
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
-    HOST = "localhost"
+    # HOST = "localhost"
     VIEW_PORT = 9999
     WORK_HOME = '/Users/wangnan/workspace/github/devops-py/devopstemp'
 

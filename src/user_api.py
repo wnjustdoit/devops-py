@@ -39,7 +39,10 @@ def login():
 # get user info
 @app.route("/user/info", methods=["GET"])
 def user_info():
-    return jsonify(web_session.get('user'))
+    user = web_session.get('user')
+    if user is None:
+        user = {}
+    return jsonify(user)
 
 
 # user logout
@@ -100,7 +103,14 @@ def update_user(id):
 # delete user(actually update)
 @app.route("/admin/user/<int:id>", methods=['DELETE'])
 def delete_user(id):
-    params_dict = {'is_deleted': get_parameter('is_deleted')}
+    is_deleted = get_parameter('is_deleted')
+    if is_deleted is None or is_deleted < 0:
+        return jsonify('status', 'FAILED')
+    params_dict = {'is_deleted': is_deleted}
+
+    user = web_session['user']
+    if user is None or user.get('login_code') is None or user.get('login_code') == 'admin':
+        return jsonify('status', 'FAILED')
 
     session = Session()
     try:
