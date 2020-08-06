@@ -41,7 +41,7 @@ def publish(git_repo, git_branch, project_name, profile, to_ip, to_project_home,
     output_strict('<<< 清除历史项目痕迹，开始新的工作', resp)
 
     output_std('>>> 克隆项目到发布系统本地')
-    resp = os.system(f'cd {work_home} && git clone {git_repo} -b {git_branch} --depth 1')
+    resp = os.system(f'cd {work_home} && git clone {git_repo} -b {git_branch} --depth=1')
     output_strict('<<< 克隆项目到发布系统本地', resp)
 
     output_std('>>> npm构建开始')
@@ -60,7 +60,7 @@ def publish(git_repo, git_branch, project_name, profile, to_ip, to_project_home,
                              [f'sh /home/devops/restart_nodejs.sh {to_project_home} {to_process_port}'],
                              to_username)
     output_std(f'<<< SSH远程执行命令结束，状态：{ssh_cmd_result}')
-    if ssh_cmd_result == 'FAILED':
+    if ssh_cmd_result != 0:
         output_error('SSH远程执行命令失败！')
 
 

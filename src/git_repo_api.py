@@ -41,7 +41,7 @@ def fetch_git_repos_2_db():
 def git_repos():
     session = Session()
     try:
-        git_repos_objects = session.query(GitRepo).filter(GitRepo.is_deleted == 0).order_by(GitRepo.id).all()
+        git_repos_objects = session.query(GitRepo).filter(GitRepo.is_deleted == 0).order_by(GitRepo.path_with_namespace).all()
         result_list = GitRepoSchema(many=True).dump(git_repos_objects)
     finally:
         session.close()

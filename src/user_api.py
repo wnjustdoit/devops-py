@@ -39,9 +39,18 @@ def login():
 # get user info
 @app.route("/user/info", methods=["GET"])
 def user_info():
+    # 模拟登录
+    web_session['user'] = {'created_at': '2019-12-13T15:57:25.389417', 'created_by': 'admin',
+                           'email': 'devops@mamaqunaer.com',
+                           'gitlab_email': 'devops@mamaqunaer.com', 'id': 2.0, 'is_deleted': 0.0,
+                           'last_updated_at': '2019-12-13T15:57:25.389417', 'last_updated_by': None,
+                           'login_code': 'admin',
+                           'login_pwd': None, 'nick_name': '超级管理员', 'role': 'devops'}
     user = web_session.get('user')
     if user is None:
         user = {}
+    else:
+        user['login_pwd'] = None
     return jsonify(user)
 
 

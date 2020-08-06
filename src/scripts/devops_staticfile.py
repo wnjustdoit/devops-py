@@ -47,7 +47,7 @@ def publish(git_repo, git_branch, project_name, source_file_dir, to_ip, to_proje
     output_strict('<<< 清除历史项目痕迹，开始新的工作', resp)
 
     output_std('>>> 克隆项目到发布系统本地')
-    resp = os.system(f'cd {work_home} && git clone -b {git_branch} {git_repo}')
+    resp = os.system(f'cd {work_home} && git clone -b {git_branch} --depth=1 {git_repo}')
     output_strict('<<< 克隆项目到发布系统本地', resp)
 
     # search file or file folder
@@ -56,7 +56,7 @@ def publish(git_repo, git_branch, project_name, source_file_dir, to_ip, to_proje
     output_std(f'>>> SCP远程上传文件，from_folder_path：{file_path}，to_folder_path：{to_project_home}')
     scp_result = scp_cmd(to_ip, to_password, file_path, to_project_home, to_username)
     output_std(f'<<< SCP远程上传文件结束，状态：{scp_result}')
-    if scp_result == 'FAILED':
+    if scp_result != 0:
         output_error('SCP上传文件到远程服务器失败！')
 
     output_std(f'>>> 远程服务器目录文件如下：')
@@ -77,7 +77,8 @@ if __name__ == '__main__':
     opts = None
     try:
         opts, args = getopt.getopt(sys.argv[1:], "hwh:gr:gb:pn:ffp:tu:ti:tph",
-                                   ["help", "work_home=", "git_repo=", "git_branches=", "project_name=", "source_file_dir=",
+                                   ["help", "work_home=", "git_repo=", "git_branches=", "project_name=",
+                                    "source_file_dir=",
                                     "to_username=", "to_ip=", "to_project_home="])
     except getopt.GetoptError as e:
         output_error(f'getopt error: {e.msg}')

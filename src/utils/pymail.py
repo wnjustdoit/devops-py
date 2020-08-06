@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import base64
 import configparser
 import smtplib
 from email.mime.text import MIMEText
@@ -18,15 +17,6 @@ default_cc = config.get('devops', 'cc')
 
 
 class MailAPI(object):
-    # def __init__(self, user: str, password: str, host: str = 'smtp.exmail.qq.com', port: int = 465,
-    #              local_hostname: str = None, charset: str = 'utf-8'):
-    #     self.user = user
-    #     self.password = password
-    #     self.host = host
-    #     self.port = port
-    #     self.local_hostname = local_hostname
-    #     self.charset = charset
-    #     self.mail_sender = None
     def __init__(self):
         self.user = config.get('devops', 'user')
         self.password = config.get('devops', 'password')
@@ -127,8 +117,6 @@ class MailAPI(object):
             email_file = MIMEText(open(file_path, 'rb').read(), 'base64', 'utf-8')
             email_file["Content-Type"] = 'application/octet-stream'
             file_name = os.path.basename(file_path)
-            # 下面这种写法，如果附件名是中文，会出现乱码问题，修改成如下写法
-            # email_file["Content-Disposition"] = f'attachment; filename="{file_name}"'
             email_file.add_header("Content-Disposition", "attachment", filename=file_name)
             self.message.attach(email_file)
             return self
@@ -146,19 +134,3 @@ class MailAPI(object):
             return self.mail_api.send_content(from_addr=self._from, to_addrs=self.to, msg=self.message.as_string(),
                                               mail_options=mail_options,
                                               rcpt_options=rcpt_options)
-
-
-if __name__ == '__main__':
-    to = ['wn@lianxingmaoyi.com', '121971904@qq.com']
-    cc = None  # ['wn@lianxingmaoyi.com']
-    content = """
-    测试<b>邮件</b><img src="cid:image1">
-    """
-    subject = '测试test'
-    _type = 'html'
-    # MailAPI().send_default(to, content, subject, cc=cc,
-    #                        _type=_type)
-
-    MailAPI.GenericSender(MailAPI(), subject=subject, to=to, cc=cc).add_text(
-        content, _type='html').add_image('/Users/wangnan/Desktop/zuul-core.png', 'image1').add_file(
-        '/Users/wangnan/workspace/github/devops-py/startup.sh').send_default()

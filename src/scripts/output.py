@@ -6,7 +6,7 @@ import sys
 def output_all(msg, resp=0, exit=False):
     print(msg if resp == 0 else f'{msg}, status_code: {resp}')
     if exit:
-        sys.exit()
+        sys.exit(resp)
     else:
         sys.stdout.flush()
 
