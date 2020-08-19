@@ -7,7 +7,7 @@ zip -r -b ~/workspace/github/devops-fe/ ~/workspace/github/devops-fe/dist.zip di
 scp -r ~/workspace/github/devops-py/src.zip root@192.168.1.248:/home/devops/devops-py
 scp -r ~/workspace/github/devops-fe/dist.zip root@192.168.1.248:/home/devops/devops-fe
 
-# 注意$符号转移
+# 注意$符转义
 ssh root@192.168.1.248 <<EOF
   unzip -o /home/devops/devops-py/src.zip -d /home/devops/devops-py/
   unzip -o /home/devops/devops-fe/dist.zip -d /home/devops/devops-fe/
