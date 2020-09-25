@@ -1,5 +1,8 @@
 ## 发布系统后台（Python Web & Python Script）
 
+#### 发布系统概述
+一共分为：前端（vue + elementui）、后端（Python）、远程服务端（shell脚本）
+
 #### 功能特性
 * 支持发布的项目类型：
     * Java 项目的发布（支持 jar、war 格式）；
