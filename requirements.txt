@@ -12,7 +12,7 @@ chardet==3.0.4
 Click==7.0
 client-python @ git+https://github.com/rancher/client-python.git@645acc6480a1c1cee2d6948877da41180e0db69c
 configparser==4.0.2
-cryptography==2.7
+cryptography==3.2
 decorator==4.4.2
 demjson==2.2.4
 Django==2.2.5
