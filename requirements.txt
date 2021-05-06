@@ -24,7 +24,7 @@ docopt==0.6.2
 English-to-IPA==0.2.1
 eventlet==0.25.1
 Flask==0.12.4
-Flask-Cors==3.0.8
+Flask-Cors==3.0.9
 Flask-Environments==0.1
 Flask-SocketIO==4.2.1
 gdapi-python==0.5.3
