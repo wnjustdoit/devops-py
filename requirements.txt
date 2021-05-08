@@ -22,7 +22,7 @@ docker-compose==1.25.0
 dockerpty==0.4.1
 docopt==0.6.2
 English-to-IPA==0.2.1
-eventlet==0.25.1
+eventlet==0.31.0
 Flask==0.12.4
 Flask-Cors==3.0.8
 Flask-Environments==0.1
